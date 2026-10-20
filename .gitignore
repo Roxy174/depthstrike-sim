@@ -1,0 +1,36 @@
+# Course materials and local working files (kept locally, never uploaded)
+/Shares/
+/$dst/
+/理论课/
+/实验课/
+/tmp/
+
+# Python environments, caches and build artifacts
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# Credentials and machine-specific environment
+.env
+.env.*
+!.env.example
+
+# Large or private data; keep download/usage documentation trackable
+/models/*
+!/models/README.md
+/data/raw/
+/recordings/
+/outputs/
+/.cache/
+
+# Operating-system files
+.DS_Store
+Thumbs.db
+Desktop.ini
