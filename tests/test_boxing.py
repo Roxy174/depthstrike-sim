@@ -52,3 +52,76 @@ def test_speed_uses_frame_interval(dt, expected):
     tracker = PunchTracker(AppConfig())
     tracker.update(0, point(1.85), point(2))
     assert tracker.update(dt, point(1.5), point(2)).can_hit is expected
+
+
+def simulation(**changes):
+    from depthstrike.boxing import BoxingSimulation
+    return BoxingSimulation(replace(AppConfig(), smoothing_tau_s=0, calibration_duration_s=0, **changes))
+
+
+def test_calibration_requires_stable_neutral_pose(skeleton):
+    from depthstrike.boxing import BoxingSimulation
+    sim = BoxingSimulation(replace(AppConfig(), calibration_duration_s=.3, smoothing_tau_s=0))
+    assert not sim.step(skeleton(0)).targets
+    assert not sim.step(skeleton(.15, shift=.3)).targets
+    assert not sim.step(skeleton(.3, shift=.3)).targets
+    assert sim.step(skeleton(.46, shift=.3)).targets
+
+
+def test_targets_remain_in_camera_space_after_body_moves(skeleton):
+    sim = simulation()
+    first = sim.step(skeleton(0))
+    centers = [t.center.copy() for t in first.targets]
+    shifted = sim.step(skeleton(.1, shift=.2))
+    for target, center in zip(shifted.targets, centers):
+        assert target.center == pytest.approx(center)
+    assert centers[0] == pytest.approx((-.2, .04, 1.5))
+
+
+def test_alternating_punches_score_once_per_attack(skeleton):
+    sim = simulation()
+    sim.step(skeleton(0))
+    hit = sim.step(skeleton(.1, left_z=1.4))
+    assert (hit.score, hit.hits, len(hit.events)) == (10, 1, 1)
+    assert any(t.flash for t in hit.targets)
+    assert sim.step(skeleton(.15, left_z=1.4)).score == 10
+    assert sim.step(skeleton(.2, left_z=1.85, right_z=1.4)).score == 20
+    assert sim.step(skeleton(.25, right_z=1.4)).score == 20
+
+
+def test_wrong_depth_does_not_score(skeleton):
+    sim = simulation()
+    sim.step(skeleton(0))
+    assert sim.step(skeleton(.1, left_z=1.7)).score == 0
+
+
+def test_pause_reset_and_round_end(skeleton):
+    sim = simulation(round_duration_s=.2)
+    sim.step(skeleton(0))
+    sim.set_paused(True)
+    assert sim.step(skeleton(1, left_z=1.4)).remaining_s == .2
+    sim.set_paused(False)
+    sim.step(skeleton(1.1))
+    assert sim.step(skeleton(1.2, left_z=1.4)).score == 10
+    done = sim.step(skeleton(1.31, right_z=1.4))
+    assert done.status == "FINISHED" and done.score == 10
+    sim.reset()
+    assert sim.step(skeleton(2)).score == 0
+
+
+def test_timeout_cancels_sweep(skeleton):
+    sim = simulation()
+    sim.step(skeleton(0))
+    sim.invalidate_tracking()
+    assert sim.step(skeleton(.1, left_z=1.4)).score == 0
+
+
+def test_repeated_trajectory_is_deterministic(skeleton):
+    results = []
+    for _ in range(2):
+        sim = simulation()
+        results.append([(s.score, s.events) for s in [
+            sim.step(skeleton(0)), sim.step(skeleton(.1, left_z=1.4)),
+            sim.step(skeleton(.2, right_z=1.4)),
+        ]])
+    assert results[0] == results[1]
