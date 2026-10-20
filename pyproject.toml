@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "depthstrike-sim"
+version = "0.1.0"
+description = "RGB-D skeleton-guided target boxing simulator"
+requires-python = ">=3.10,<3.14"
+dependencies = ["numpy==1.26.4"]
+
+[project.optional-dependencies]
+dev = ["pytest==8.3.5"]
+display = ["open3d==0.19.0", "opencv-contrib-python==4.11.0.86"]
+camera = ["mediapipe==0.10.21", "pyorbbecsdk2==2.0.18", "opencv-contrib-python==4.11.0.86"]
+
+[project.scripts]
+depthstrike = "depthstrike.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

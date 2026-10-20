@@ -1,0 +1,11 @@
+{
+  "hand_radius_m": 0.06,
+  "target_radius_m": 0.08,
+  "confidence_threshold": 0.6,
+  "max_track_gap_s": 0.2,
+  "round_duration_s": 60.0,
+  "smoothing_tau_s": 0.035,
+  "punch_speed_m_s": 0.65,
+  "calibration_duration_s": 0.6,
+  "target_forward_m": 0.5
+}
