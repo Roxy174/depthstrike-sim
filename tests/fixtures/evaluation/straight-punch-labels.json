@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "evidence": "synthetic",
+  "label_basis": "Hand-checked straight_punches.jsonl geometry: wrist z 1.85 -> 1.40 in 0.10 s; target z 1.50; combined radius 0.14. Sweep enters at 0.0467 s and 0.2467 s. Events in the recording were not used to create these windows.",
+  "unit": "m",
+  "timestamp_unit": "s",
+  "coordinates": "camera_x_right_y_down_z_forward",
+  "intrinsics": {"width": 640, "height": 480, "fx": 600.0, "fy": 600.0, "cx": 320.0, "cy": 240.0},
+  "targets": [
+    {"target_id": 0, "hand": "left", "center": [-0.2, 0.04, 1.5], "radius": 0.08},
+    {"target_id": 1, "hand": "right", "center": [0.2, 0.04, 1.5], "radius": 0.08}
+  ],
+  "active_schedule": [
+    {"start_s": 0.0, "end_s": 0.2, "hand": "left", "target_id": 0},
+    {"start_s": 0.2, "end_s": 0.5, "hand": "right", "target_id": 1}
+  ],
+  "expected_windows": [
+    {"start_s": 0.04, "end_s": 0.12, "hand": "left", "target_id": 0},
+    {"start_s": 0.24, "end_s": 0.32, "hand": "right", "target_id": 1}
+  ],
+  "ignore_windows": []
+}

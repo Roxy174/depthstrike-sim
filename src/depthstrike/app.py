@@ -34,6 +34,8 @@ def run_session(source, simulation, view, recorder=None, max_frames=None, *,
             if action == "pause": simulation.set_paused(not simulation.paused)
             elif action == "reset": simulation.reset()
             elif action == "tracking_lost": simulation.invalidate_tracking()
+            if hasattr(source, "handle_action"):
+                source.handle_action(action, paused=simulation.paused)
 
     with ExitStack() as resources:
         for resource in (source, view, recorder, rgbd_recorder):

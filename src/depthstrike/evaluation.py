@@ -140,6 +140,7 @@ class EvaluationManifest:
                         normalized.update(hand=hand, target_id=target_id)
                     dest.append(normalized)
             schedules.sort(key=lambda r: r["start_s"])
+            if not schedules: raise ValueError("An active target schedule is required")
             if any(b["start_s"] < a["end_s"] for a, b in zip(schedules, schedules[1:])):
                 raise ValueError("Active schedule must not overlap")
             for n, a in enumerate(labels):

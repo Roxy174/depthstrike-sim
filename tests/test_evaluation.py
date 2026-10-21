@@ -34,7 +34,7 @@ def test_empty_event_sets_have_null_denominators():
     assert result["precision"] is None and result["recall"] is None
 
 
-@pytest.mark.parametrize("mutation", ["overlap", "touch", "unknown_target", "bad_intrinsics", "bad_unit", "bad_evidence", "partial_ignore", "bad_schedule", "nonfinite"])
+@pytest.mark.parametrize("mutation", ["overlap", "touch", "unknown_target", "bad_intrinsics", "bad_unit", "bad_evidence", "partial_ignore", "bad_schedule", "empty_schedule", "nonfinite"])
 def test_invalid_manifest_is_rejected(mutation):
     from depthstrike.evaluation import EvaluationManifest
     data = manifest_dict()
@@ -49,6 +49,7 @@ def test_invalid_manifest_is_rejected(mutation):
         data["expected_windows"] = [window]
         data["ignore_windows"] = [{"start_s": .3, "end_s": .6}]
     elif mutation == "bad_schedule": data["active_schedule"].append({**data["active_schedule"][0]})
+    elif mutation == "empty_schedule": data["active_schedule"] = []
     elif mutation == "nonfinite": data["targets"][0]["center"][0] = float("nan")
     with pytest.raises(ValueError): EvaluationManifest.from_dict(data)
 
@@ -150,3 +151,11 @@ def test_comparison_cli_creates_report_exclusively_and_reports_bad_input(tmp_pat
     assert main(["--input", "tests/fixtures/straight_punches.jsonl", "--labels", str(malformed),
                  "--output", str(tmp_path/"bad.json")]) != 0
     assert "Traceback" not in capsys.readouterr().err
+
+
+def test_supplied_external_labels_have_two_hand_checked_attacks():
+    from depthstrike.evaluation import evaluate_recording
+    result = evaluate_recording("tests/fixtures/straight_punches.jsonl",
+                                "tests/fixtures/evaluation/straight-punch-labels.json")
+    method = result["methods"]["3d_swept_punch"]
+    assert (method["tp"], method["fp"], method["fn"]) == (2, 0, 0)

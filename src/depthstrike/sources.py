@@ -61,10 +61,14 @@ class DemoPoseSource:
         self.fps, self.total_frames = fps, total_frames
         self.config = config or AppConfig()
         self.index = 0
+        self._motion_index = 0.
+        self._demo_paused = False
         self.closed = False
         self.actions = []
         self.last_rgbd = None
         if self.config.interaction_mode == "guided":
+            if self.config.punch_speed_m_s > 2. or self.config.smoothing_tau_s > .1:
+                raise ValueError("Synthetic demo supports punch_speed_m_s <= 2 and smoothing_tau_s <= 0.1; use a matching replay for other settings")
             if 1 / fps > self.config.max_track_gap_s + 1e-9:
                 raise ValueError("Demo fps cannot provide continuous guided tracking for max_track_gap_s")
             c = self.config
@@ -77,6 +81,32 @@ class DemoPoseSource:
             self._setup_end = sum(s[0] for s in self._segments)
             self._official_start = self._setup_end + 2.4 + c.countdown_s + .5
             self._validate_guided_geometry()
+
+    def _rewind_guided_phase(self):
+        """Restart only the interrupted scripted hold, without rewinding frame time."""
+        t = self._motion_index / self.fps
+        elapsed = 0.
+        for duration, _, _ in self._segments:
+            if t < elapsed + duration:
+                self._motion_index = elapsed * self.fps
+                return
+            elapsed += duration
+        if t < self._setup_end + 2.4:
+            cycle = int((t - self._setup_end) / 1.2)
+            self._motion_index = (self._setup_end + cycle * 1.2) * self.fps
+        elif t < self._official_start:
+            self._motion_index = (self._setup_end + 2.4) * self.fps
+
+    def handle_action(self, action, *, paused=False):
+        if self.config.interaction_mode != "guided": return
+        if action == "reset":
+            self._motion_index = 0.
+            self._demo_paused = False
+        elif action == "pause":
+            self._demo_paused = paused
+            if not paused: self._rewind_guided_phase()
+        elif action == "tracking_lost":
+            self._rewind_guided_phase()
 
     def _validate_guided_geometry(self):
         from .geometry import segment_sphere_intersection
@@ -128,7 +158,7 @@ class DemoPoseSource:
             return None
         t = self.index/self.fps
         if self.config.interaction_mode == "guided":
-            left, right = self._guided_reaches(t)
+            left, right = self._guided_reaches(self._motion_index / self.fps)
             left_z, right_z = 1.85 - .5 * left, 1.85 - .5 * right
             elbows = {"left_elbow": (-.2, .16, 1.93), "right_elbow": (.2, .16, 1.93)}
         else:
@@ -144,6 +174,7 @@ class DemoPoseSource:
                   "left_hip": (-.15, .5, 2.), "right_hip": (.15, .5, 2.)}
         result = SkeletonFrame(self.index, t, {name: Joint3D(value, .99) for name, value in values.items()})
         self.index += 1
+        if not self._demo_paused: self._motion_index += 1
         return result
 
     def describe(self): return {"source": "synthetic demo", "evidence": "synthetic", "fps": self.fps,

@@ -9,5 +9,5 @@
   "smoothing_tau_s": 0.035,
   "punch_speed_m_s": 0.65,
   "calibration_duration_s": 0.6,
-  "target_forward_m": 0.5
+  "target_reach_ratio": 0.85
 }
