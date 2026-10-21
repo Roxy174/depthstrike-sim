@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .config import AppConfig
+from .geometry import segment_sphere_intersection
 from .types import Joint3D, SkeletonFrame
 
 HANDS = ("left", "right")
@@ -49,6 +50,7 @@ class GuidedCalibration:
         self._neutral_fists = {}
         self._neutral = {}
         self._reaches = {}
+        self._reach_vectors = {}
         self._countdown_start = None
         self._profile_error = None
         self.state = GuidanceState(self.stage, 0., "hold_guard")
@@ -89,6 +91,10 @@ class GuidedCalibration:
                 return None, "adjust_distance"
             if np.linalg.norm(center - self._neutral_fists[hand]) <= c.hand_radius_m + c.target_radius_m + .02:
                 return None, "reach_too_small"
+            comfortable_fist = self._reference[hand] + self._reach_vectors[hand]
+            if segment_sphere_intersection(self._neutral_fists[hand], comfortable_fist, center,
+                                           c.hand_radius_m + c.target_radius_m) is None:
+                return None, "target_unreachable"
             guards[hand] = self._neutral[hand] + .04
             attacks[hand] = guards[hand] + .5 * (reach - guards[hand])
             travel[hand] = min(c.punch_min_travel_m, .25 * (reach - guards[hand]))
@@ -163,7 +169,8 @@ class GuidedCalibration:
             done, progress = self._hold(t, points, c.reach_hold_s)
             if not done:
                 return self._state("hold_reach", progress)
-            self._reaches[hand] = -float(np.mean([p[-1, 2] for _, p in self._samples]))
+            self._reach_vectors[hand] = np.mean([p[-1] for _, p in self._samples], axis=0)
+            self._reaches[hand] = -float(self._reach_vectors[hand][2])
             return self._transition(f"RETURN_{hand.upper()}")
         if not guard:
             self._samples = []

@@ -204,7 +204,6 @@ def evaluate_frames(frames, manifest: EvaluationManifest, config: AppConfig) -> 
     history = {}
     previous_points = {}
     previous_t = None
-    previous_active = None
     settled = set()
     total_frames = evaluated_frames = invalid_frames = 0
     last_t, last_id = -1., -1
@@ -213,12 +212,12 @@ def evaluate_frames(frames, manifest: EvaluationManifest, config: AppConfig) -> 
     schedule_hash = hashlib.sha256(_canonical(list(manifest.active_schedule))).hexdigest()
 
     def invalidate():
-        nonlocal previous_t, previous_active
+        nonlocal previous_t
         tracker.reset()
         for punch in punches.values(): punch.reset()
         history.clear()
         previous_points.clear()
-        previous_t = previous_active = None
+        previous_t = None
 
     for item in frames:
         frame, actions = (item, ()) if isinstance(item, SkeletonFrame) else item
@@ -250,7 +249,6 @@ def evaluate_frames(frames, manifest: EvaluationManifest, config: AppConfig) -> 
             invalid_frames += 1
             invalidate()
             continue
-        active = manifest.active(t)
         states = {h: punch.update(t, fists[h], filtered.joints.get(f"{h}_shoulder"),
                                   **manifest.punch_thresholds.get(h, {})) for h, punch in punches.items()}
         for target in manifest.targets:
@@ -260,7 +258,6 @@ def evaluate_frames(frames, manifest: EvaluationManifest, config: AppConfig) -> 
             inside2 = _inside_2d(point, target, config, manifest.intrinsics)
             pair = (hand, target.target_id)
             old3, old2 = history.get(("3d", pair)), history.get(("2d", pair))
-            same_active = active == pair and previous_active == pair
             fraction = None
             if old3 is False and previous_t is not None:
                 fraction = segment_sphere_intersection(previous_points[hand], point, target.center,
@@ -274,12 +271,14 @@ def evaluate_frames(frames, manifest: EvaluationManifest, config: AppConfig) -> 
             if punch.can_hit and (hand, punch.attack_id) not in settled:
                 candidates["3d_swept_punch"] = candidates["3d_swept_entry"]
             for method, hit_t in candidates.items():
-                if hit_t is not None and same_active and manifest.active(hit_t) == pair:
+                # Every target retains geometry history even while inactive. Its
+                # candidate time, not the surrounding samples, decides activity.
+                if hit_t is not None and manifest.active(hit_t) == pair:
                     predictions[method].append({"timestamp_s": float(hit_t), "hand": hand,
                         "target_id": target.target_id, "frame_id": frame.frame_id})
                     if method == "3d_swept_punch": settled.add((hand, punch.attack_id))
             history[("3d", pair)], history[("2d", pair)] = inside3, inside2
-        previous_t, previous_active = t, active
+        previous_t = t
         previous_points = {h: j.position.copy() for h, j in fists.items()}
     if not total_frames: raise ValueError("Cannot evaluate an empty recording: no frames")
     methods = {name: {**match_events(events, manifest.expected_windows, manifest.ignore_windows),

@@ -163,6 +163,10 @@ class RGBDReplaySource(_Reader):
         self.directory = Path(directory).resolve()
         super().__init__(self.directory/"frames.jsonl", "depthstrike.rgbd")
 
+    def describe(self):
+        return {"source": "rgbd-replay", "evidence": self.metadata.get("evidence", "unverified"),
+                "recording_metadata": dict(self.metadata)}
+
     def _array(self, name, shape, *, color=False):
         if not isinstance(name, str): raise ValueError("Invalid array filename")
         candidate = (self.directory/name).resolve()

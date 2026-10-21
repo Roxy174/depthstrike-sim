@@ -161,6 +161,38 @@ def test_explicit_model_download_records_digest_and_never_overwrites(tmp_path):
     assert destination.read_bytes() == data
 
 
+def test_model_download_refuses_existing_sidecar_before_network(tmp_path):
+    import runpy
+    api = runpy.run_path("scripts/download_pose_model.py")
+    destination = tmp_path / "pose.task"
+    sidecar = destination.with_suffix(".task.json")
+    sidecar.write_bytes(b"preserved personal provenance notes")
+    calls = []
+    def opener(*args, **kwargs):
+        calls.append(args)
+        raise AssertionError("Existing sidecar must be checked before downloading")
+    with pytest.raises(FileExistsError):
+        api["download_model"](destination, opener=opener)
+    assert not calls
+    assert not destination.exists()
+    assert sidecar.read_bytes() == b"preserved personal provenance notes"
+
+
+def test_model_download_sidecar_creation_is_exclusive_even_after_precheck(tmp_path):
+    import io
+    import runpy
+    api = runpy.run_path("scripts/download_pose_model.py")
+    destination = tmp_path / "pose.task"
+    sidecar = destination.with_suffix(".task.json")
+    def opener(*args, **kwargs):
+        sidecar.write_bytes(b"created by another process")
+        return io.BytesIO(b"synthetic model")
+    with pytest.raises(FileExistsError):
+        api["download_model"](destination, opener=opener)
+    assert sidecar.read_bytes() == b"created by another process"
+    assert not destination.exists()
+
+
 def test_real_model_opens_from_unicode_directory(tmp_path):
     from pathlib import Path
     pytest.importorskip("mediapipe")

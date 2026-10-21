@@ -100,6 +100,31 @@ def test_guard_overlap_and_out_of_depth_targets_are_rejected(skeleton, config):
     assert state.guidance.message_code in ("reach_too_small", "adjust_distance")
 
 
+def test_target_outside_measured_comfortable_path_is_rejected(skeleton):
+    d = Driver(skeleton, AppConfig(fist_offset_m=0, smoothing_tau_s=0, target_height_m=1.))
+    state = d.calibrate()
+    assert state.guidance.stage == "REACH_LEFT"
+    assert state.guidance.message_code == "target_unreachable"
+    assert state.guidance.profile is None
+    assert not state.targets
+    assert d.hold(.1).guidance.message_code == "target_unreachable"
+
+
+def test_lateral_reach_cannot_calibrate_an_unmeasured_straight_target(skeleton):
+    def angled(t, **pose):
+        frame = skeleton(t, **pose)
+        for hand in ("left", "right"):
+            name = f"{hand}_wrist"
+            joint = frame.joints[name]
+            if joint.position is not None and joint.position[2] < 1.6:
+                frame.joints[name] = Joint3D(joint.position + (0.5, 0, 0), joint.confidence)
+        return frame
+    state = Driver(angled).calibrate()
+    assert state.guidance.stage == "REACH_LEFT"
+    assert state.guidance.message_code == "target_unreachable"
+    assert not state.targets
+
+
 def test_practice_hits_never_increment_official_score(skeleton):
     d = Driver(skeleton)
     d.calibrate()

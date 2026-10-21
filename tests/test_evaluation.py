@@ -83,6 +83,62 @@ def test_active_hand_switch_cannot_create_contact_entry(skeleton):
     assert all(not r["predictions"] for r in result["methods"].values())
 
 
+@pytest.mark.parametrize("start,end,discrete,swept", [
+    (.01, .2, 1, 1),  # Entry at .06 is after activation.
+    (0., .08, 0, 1),  # Swept entry is before deactivation, current sample after it.
+    (.07, .2, 1, 0),  # Discrete detection is at .1; swept contact predates activation.
+    (0., .05, 0, 0),  # Neither candidate time is in the active interval.
+])
+def test_contact_candidates_use_their_own_time_at_schedule_boundaries(skeleton, start, end, discrete, swept):
+    from depthstrike.evaluation import EvaluationManifest, evaluate_frames
+    data = manifest_dict()
+    data["active_schedule"][0].update(start_s=start, end_s=end)
+    if swept:
+        data["expected_windows"] = [{"start_s": max(.05, start), "end_s": min(.11, end-.001),
+                                     "hand": "left", "target_id": 0}]
+    frames = [skeleton(0), skeleton(.1, left_z=1.5)]
+    result = evaluate_frames(frames, EvaluationManifest.from_dict(data), AppConfig(fist_offset_m=0, smoothing_tau_s=0))
+    methods = result["methods"]
+    assert methods["3d_discrete_entry"]["prediction_count"] == discrete
+    for name in ("3d_swept_entry", "3d_swept_punch"):
+        assert methods[name]["prediction_count"] == swept
+        if swept:
+            assert methods[name]["predictions"][0]["timestamp_s"] == pytest.approx(.06)
+            assert (methods[name]["tp"], methods[name]["fn"]) == (1, 0)
+
+
+def test_rgbd_transcription_preserves_synthetic_evidence_and_original_metadata(tmp_path):
+    from types import SimpleNamespace
+    from depthstrike.evaluation import evaluate_recording
+    from depthstrike.recording import PoseRecorder, PoseReplaySource, RGBDRecorder, RGBDReplaySource
+    from depthstrike.sources import CameraPoseSource
+    from test_fusion import rgbd
+    config = AppConfig()
+    original = {"source": "blank fixture", "evidence": "synthetic", "pose_model": {"sha256": "upstream"},
+                "calibration": {"id": "fixture-calibration"}}
+    directory, path, labels = tmp_path/"rgbd", tmp_path/"poses.jsonl", tmp_path/"labels.json"
+    with RGBDRecorder(directory, config, original) as recorder:
+        recorder.write(rgbd())
+    estimator = SimpleNamespace(metadata={"sha256": "current"}, detect=lambda f: {}, close=lambda: None)
+    with CameraPoseSource(config, capture=RGBDReplaySource(directory), estimator=estimator) as source:
+        with PoseRecorder(path, config, source.describe()) as recorder:
+            recorder.write(source.read(), ())
+    with PoseReplaySource(path) as replay:
+        metadata = replay.metadata
+    assert metadata.get("evidence") == "synthetic"
+    assert metadata["source"] == "rgbd-replay"
+    assert metadata["recording_metadata"] == original
+    assert metadata["pose_model"] == {"sha256": "current"}
+    data = manifest_dict()
+    data["evidence"] = "recorded"
+    labels.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(ValueError, match="Synthetic recording"):
+        evaluate_recording(path, labels)
+    data["evidence"] = "synthetic"
+    labels.write_text(json.dumps(data), encoding="utf-8")
+    assert evaluate_recording(path, labels)["evidence"] == "synthetic"
+
+
 def test_tracking_recovery_cannot_bridge_into_a_hit(skeleton):
     from depthstrike.evaluation import EvaluationManifest, evaluate_frames
     frames = [skeleton(0), skeleton(.1, invalid="left_elbow"), skeleton(.15, left_z=1.5)]

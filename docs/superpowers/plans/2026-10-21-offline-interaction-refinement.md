@@ -60,11 +60,11 @@
 - `AppConfig.interaction_mode: str = "guided"`，只允许 guided/legacy；增加 `fist_offset_m=.06`、`forearm_min_length_m=.02`、`reach_hold_s=.35`、`return_guard_s=.20`、`reach_min_increment_m=.10`、`target_reach_ratio=.85`、`countdown_s=2.0`。零偏移合法，其余时长/长度为正，比例 (0,1)，枚举不能由 bool/数字替代。
 - v2 headers 明示新配置；v1 reader 仅在未提供模式时注入 legacy 和零拳心偏移。v2 缺失 mode 报错。未知版本继续拒绝。
 
-- [ ] **Step 1: Write failing tests.** `test_fist_extends_forearm_by_six_cm`：`assert estimate_fist(Joint3D((0,0,2), .9), Joint3D((0,0,1.8), .8), AppConfig()).position == pytest.approx((0,0,1.74))`；`test_missing_elbow_and_degenerate_forearm_are_invalid` 覆盖缺失、低置信度、0.019 m；`test_quality_reason_survives_tracking_and_v2_roundtrip` 核对无效原因；参数化非法配置；`test_v1_fixture_retains_legacy_mode_and_twenty_points`：`assert (summary.frames, summary.hits, summary.score) == (4, 2, 20)`；`test_v2_requires_explicit_interaction_mode` 拒绝含混新格式。
-- [ ] **Step 2: Run RED.** `.venv\Scripts\python.exe -m pytest tests/test_interaction.py tests/test_config.py tests/test_fusion.py tests/test_recording.py -q`；确认新增测试因缺接口/行为失败，而非环境失败。
-- [ ] **Step 3: Implement contracts and proxy.** 按规范公式计算拳心；区分融合失败原因并保留现有保守有效性检查；读取器显式兼容 v1/v2，写入器使用 v2。保留 NPY 大小/路径/格式防护和独占文件创建。
-- [ ] **Step 4: Run GREEN.** 上述测试全通过；另运行 `tests/test_cli.py::test_supplied_fixture_has_hand_checked_result`，结果仍为 4 帧、20 分。
-- [ ] **Step 5: Commit only task files.** `feat: add quality-aware fist proxies and versioned replay compatibility`。
+- [x] **Step 1: Write failing tests.** `test_fist_extends_forearm_by_six_cm`：`assert estimate_fist(Joint3D((0,0,2), .9), Joint3D((0,0,1.8), .8), AppConfig()).position == pytest.approx((0,0,1.74))`；`test_missing_elbow_and_degenerate_forearm_are_invalid` 覆盖缺失、低置信度、0.019 m；`test_quality_reason_survives_tracking_and_v2_roundtrip` 核对无效原因；参数化非法配置；`test_v1_fixture_retains_legacy_mode_and_twenty_points`：`assert (summary.frames, summary.hits, summary.score) == (4, 2, 20)`；`test_v2_requires_explicit_interaction_mode` 拒绝含混新格式。
+- [x] **Step 2: Run RED.** `.venv\Scripts\python.exe -m pytest tests/test_interaction.py tests/test_config.py tests/test_fusion.py tests/test_recording.py -q`；确认新增测试因缺接口/行为失败，而非环境失败。
+- [x] **Step 3: Implement contracts and proxy.** 按规范公式计算拳心；区分融合失败原因并保留现有保守有效性检查；读取器显式兼容 v1/v2，写入器使用 v2。保留 NPY 大小/路径/格式防护和独占文件创建。
+- [x] **Step 4: Run GREEN.** 上述测试全通过；另运行 `tests/test_cli.py::test_supplied_fixture_has_hand_checked_result`，结果仍为 4 帧、20 分。
+- [x] **Step 5: Commit only task files.** `feat: add quality-aware fist proxies and versioned replay compatibility`。
 
 ## Task 2: 个体化引导、练习及正式回合
 
@@ -78,11 +78,11 @@
 - `SceneState` 新增默认字段 `guidance`、`fists`、`feedback`，不得破坏旧位置构造。
 - `DemoPoseSource(config=None, fps=30., total_frames=None)` 依据 mode 选择旧轨迹或含引导的确定性动作；描述中持续标明 synthetic。
 
-- [ ] **Step 1: Write failing tests.** 覆盖 0.6 s 中立、0.35 s 左右舒适前伸、0.20 s 收拳、练习和 2 s 倒计时的顺序；两个不同舒适范围生成不同目标，断言 `assert center[2] == pytest.approx(reference_shoulder[2] - .85 * comfortable_extension)` 且身体移动后不变；`test_pause_and_tracking_gap_do_not_complete_hold`；`test_missing_shoulder_cannot_score_or_consume_guided_round_time`；`test_practice_hits_never_increment_official_score`：`assert (state.score, state.hits, state.remaining_s) == (0, 0, 60)`；`test_resume_requires_guard_not_extended_fist`；`test_shoulder_drift_resets_current_reach_sample`；`test_guard_overlap_and_out_of_depth_targets_are_rejected`；`test_interrupted_countdown_restarts_after_guard`；`test_missing_inactive_elbow_suppresses_scoring_and_time`。原有测试显式使用 legacy，保留原预期。
-- [ ] **Step 2: Run RED.** `.venv\Scripts\python.exe -m pytest tests/test_calibration.py tests/test_boxing.py tests/test_app.py tests/test_cli.py -q`。
-- [ ] **Step 3: Implement staged calibration.** 用输入时间和有效连续样本推进；引导档案的公式、深度检查、暂停/失效/重置语义采用 spec。将 legacy 路径清晰隔离；guided 同一拳心用于出拳和扫掠碰撞。左右练习命中只推进练习；倒计时结束清空攻击；正式计时只累计有效连续区间。
-- [ ] **Step 4: Implement deterministic demo and roundtrip.** 更新 CLI 构造使 source 接收所用配置；脚本包含所有阶段，不向 simulation 注入“已校准”标志。测试新 demo 能进入 RUNNING 并左右命中；相同配置两次事件完全一致；录制回放事件完全一致。
-- [ ] **Step 5: Run GREEN and commit.** 上述测试通过，v1 夹具仍 20 分；提交 `feat: add reach-calibrated guided boxing sessions`。
+- [x] **Step 1: Write failing tests.** 覆盖 0.6 s 中立、0.35 s 左右舒适前伸、0.20 s 收拳、练习和 2 s 倒计时的顺序；两个不同舒适范围生成不同目标，断言 `assert center[2] == pytest.approx(reference_shoulder[2] - .85 * comfortable_extension)` 且身体移动后不变；`test_pause_and_tracking_gap_do_not_complete_hold`；`test_missing_shoulder_cannot_score_or_consume_guided_round_time`；`test_practice_hits_never_increment_official_score`：`assert (state.score, state.hits, state.remaining_s) == (0, 0, 60)`；`test_resume_requires_guard_not_extended_fist`；`test_shoulder_drift_resets_current_reach_sample`；`test_guard_overlap_and_out_of_depth_targets_are_rejected`；`test_interrupted_countdown_restarts_after_guard`；`test_missing_inactive_elbow_suppresses_scoring_and_time`。原有测试显式使用 legacy，保留原预期。
+- [x] **Step 2: Run RED.** `.venv\Scripts\python.exe -m pytest tests/test_calibration.py tests/test_boxing.py tests/test_app.py tests/test_cli.py -q`。
+- [x] **Step 3: Implement staged calibration.** 用输入时间和有效连续样本推进；引导档案的公式、深度检查、暂停/失效/重置语义采用 spec。将 legacy 路径清晰隔离；guided 同一拳心用于出拳和扫掠碰撞。左右练习命中只推进练习；倒计时结束清空攻击；正式计时只累计有效连续区间。
+- [x] **Step 4: Implement deterministic demo and roundtrip.** 更新 CLI 构造使 source 接收所用配置；脚本包含所有阶段，不向 simulation 注入“已校准”标志。测试新 demo 能进入 RUNNING 并左右命中；相同配置两次事件完全一致；录制回放事件完全一致。
+- [x] **Step 5: Run GREEN and commit.** 上述测试通过，v1 夹具仍 20 分；提交 `feat: add reach-calibrated guided boxing sessions`。
 
 ## Task 3: 解释性反馈、叠加主视图与几何复用
 
@@ -95,11 +95,11 @@
 - `AudioFeedback(enabled=False).notify(events)` / `close()`；仅 Windows 上懒导入 winsound，使用异步系统声音，错误最多提示一次，不传播为计分错误。
 - CLI 添加 `--view overlay|dual` 和 `--sound`；headless 与 sound 冲突时报可操作参数错误。
 
-- [ ] **Step 1: Write failing tests.** `test_depth_mismatch_is_explained_without_hit`、`test_invalid_hand_clears_all_distance_fields`：`assert (feedback.surface_gap_m, feedback.depth_delta_m, feedback.lateral_m) == (None, None, None)`、`test_tracking_loss_precedes_speed_hint`；纯图像测试含阶段/进度和拳心，NaN/后方目标不绘制；mock Open3D 下连续 100 帧对象创建/增删数量不随帧数增长，断言 `assert final_add_count == initial_add_count`，无效后复用恢复；overlay 不导入 open3d；双窗口各自关闭释放资源；音频失败不会改变分数。
-- [ ] **Step 2: Run RED.** `.venv\Scripts\python.exe -m pytest tests/test_feedback.py tests/test_visualization.py tests/test_app.py -q`。
-- [ ] **Step 3: Implement feedback and views.** 数值距离与命中使用同一拳心/半径；按 spec 优先级映射提示。拆分常驻三维渲染，mesh 顶点从原始局部模板重算，避免逐帧 transform 累积漂移；空线集/空网格隐藏失效对象。目标深度线索只用于显示。图形调用均保留在主线程。
-- [ ] **Step 4: Run GREEN and visible smoke.** 单测通过；分别运行新 demo 的 overlay/dual，检查引导、拳心、空间反馈、闪烁、暂停和退出。可用桌面时执行 opt-in GUI 测试并保存本地截图；无显示时明确记为未验收，不伪造通过。
-- [ ] **Step 5: Commit task files.** `feat: add explanatory overlay feedback and persistent arena geometry`。
+- [x] **Step 1: Write failing tests.** `test_depth_mismatch_is_explained_without_hit`、`test_invalid_hand_clears_all_distance_fields`：`assert (feedback.surface_gap_m, feedback.depth_delta_m, feedback.lateral_m) == (None, None, None)`、`test_tracking_loss_precedes_speed_hint`；纯图像测试含阶段/进度和拳心，NaN/后方目标不绘制；mock Open3D 下连续 100 帧对象创建/增删数量不随帧数增长，断言 `assert final_add_count == initial_add_count`，无效后复用恢复；overlay 不导入 open3d；双窗口各自关闭释放资源；音频失败不会改变分数。
+- [x] **Step 2: Run RED.** `.venv\Scripts\python.exe -m pytest tests/test_feedback.py tests/test_visualization.py tests/test_app.py -q`。
+- [x] **Step 3: Implement feedback and views.** 数值距离与命中使用同一拳心/半径；按 spec 优先级映射提示。拆分常驻三维渲染，mesh 顶点从原始局部模板重算，避免逐帧 transform 累积漂移；空线集/空网格隐藏失效对象。目标深度线索只用于显示。图形调用均保留在主线程。
+- [x] **Step 4: Run GREEN and visible smoke.** 单测通过；分别运行新 demo 的 overlay/dual，检查引导、拳心、空间反馈、闪烁、暂停和退出。可用桌面时执行 opt-in GUI 测试并保存本地截图；无显示时明确记为未验收，不伪造通过。
+- [x] **Step 5: Commit task files.** `feat: add explanatory overlay feedback and persistent arena geometry`。
 
 ## Task 4: 软件阶段观测与可靠导出
 
@@ -111,11 +111,11 @@
 - `CameraPoseSource(..., metrics=None)` 观测 capture/pose/fusion；`run_session(..., metrics=None)` 观测 read/simulation/record/render/frame_total；现有会话 clock 仍仅控制超时/播放，不与 profiling 时钟混用。
 - `--metrics PATH` 输出非覆盖 JSON；已有文件在启动设备/模型前拒绝。执行异常时由 CLI finally 关闭后导出 partial 状态，不能用导出异常覆盖原错误。
 
-- [ ] **Step 1: Write failing tests.** 假时钟断言各阶段耗时、分位数与样本计数，单次 0.012 s 时断言 `assert stage["p50_s"] == pytest.approx(.012)`；`test_nested_read_metrics_are_not_summed_twice`；超过 4096 样本内存有界，断言 `assert stage["retained_count"] == 4096`；异常、超时、提前退出产生部分统计；已有输出内容不变；设备时间戳远离软件时钟仍输出非负合法耗时。
-- [ ] **Step 2: Run RED.** `.venv\Scripts\python.exe -m pytest tests/test_metrics.py tests/test_adapters.py tests/test_app.py tests/test_cli.py -q`。
-- [ ] **Step 3: Implement metrics boundaries.** 区分软件耗时、播放等待和设备时间；metadata 保存输入类型/配置/版本和成功或 partial 状态。不加入线程或修改 RGB-D 配对。
-- [ ] **Step 4: Run GREEN and CLI smoke.** `.venv\Scripts\python.exe -m depthstrike --source demo --headless --frames 600 --metrics outputs/offline-stage-metrics-UNIQUE.json`；JSON 可解析、阶段存在且 evidence 为 synthetic；记录软件结果，不标注真实端到端延迟。
-- [ ] **Step 5: Commit task files.** `feat: add bounded software-stage timing diagnostics`。
+- [x] **Step 1: Write failing tests.** 假时钟断言各阶段耗时、分位数与样本计数，单次 0.012 s 时断言 `assert stage["p50_s"] == pytest.approx(.012)`；`test_nested_read_metrics_are_not_summed_twice`；超过 4096 样本内存有界，断言 `assert stage["retained_count"] == 4096`；异常、超时、提前退出产生部分统计；已有输出内容不变；设备时间戳远离软件时钟仍输出非负合法耗时。
+- [x] **Step 2: Run RED.** `.venv\Scripts\python.exe -m pytest tests/test_metrics.py tests/test_adapters.py tests/test_app.py tests/test_cli.py -q`。
+- [x] **Step 3: Implement metrics boundaries.** 区分软件耗时、播放等待和设备时间；metadata 保存输入类型/配置/版本和成功或 partial 状态。不加入线程或修改 RGB-D 配对。
+- [x] **Step 4: Run GREEN and CLI smoke.** `.venv\Scripts\python.exe -m depthstrike --source demo --headless --frames 600 --metrics outputs/offline-stage-metrics-UNIQUE.json`；JSON 可解析、阶段存在且 evidence 为 synthetic；记录软件结果，不标注真实端到端延迟。
+- [x] **Step 5: Commit task files.** `feat: add bounded software-stage timing diagnostics`。
 
 ## Task 5: 独立标签与受控对比评估
 
@@ -128,11 +128,11 @@
 - 2D 基线用给定 intrinsics 投影拳心与目标及半径；仅支持 none 或已有受支持 Brown 标定。Brown 所需 cv2 缺失时报说明，不自动替换标定。
 - 固定日程和目标来自 manifest；所有方法共享预处理、拳心及阈值。按时间、手、目标作确定性一对一窗口匹配，额外落入已匹配窗口的预测单列 duplicates 并计 FP；null 表示零分母。
 
-- [ ] **Step 1: Write failing tests.** 两个标签窗口，一窗内两条预测及窗外一条预测：`assert (result["tp"], result["fp"], result["fn"], result["duplicates"]) == (1, 2, 1, 1)`；空预测/空标签分母为 null；重叠/共端点窗口、无效目标/时间/内参被拒绝；忽略区间同时排除预测和完全包含标签，部分相交拒绝；`test_each_method_sees_same_target_schedule`；`test_active_hand_switch_cannot_create_contact_entry`；重复运行除耗时外报告一致；读取录制 events 不改变真值。每个解析场景检查 spec 中相应区分，而非强求改进方法在所有场景都最好。
-- [ ] **Step 2: Run RED.** `.venv\Scripts\python.exe -m pytest tests/test_evaluation.py -q`。
-- [ ] **Step 3: Implement labels, methods and analytic scenarios.** 标签由独立几何/动作定义指定，使用独立代码核对预期事件；禁止从被测输出生成窗口。JSON 输出含证据类型、输入 SHA256、完整方法配置和场景级计数。manifest/输入格式错误转换为可操作 CLI 错误，无 traceback 泄露。
-- [ ] **Step 4: Run GREEN and reproducibility smoke.** `.venv\Scripts\python.exe -m depthstrike.evaluation --suite synthetic --output outputs/synthetic-comparison-UNIQUE.json`；报告声明 synthetic，指标与测试手算一致，输出拒绝覆盖。补测 external pose + labels 路径。
-- [ ] **Step 5: Commit task files.** `feat: add reproducible labeled interaction comparisons`。
+- [x] **Step 1: Write failing tests.** 两个标签窗口，一窗内两条预测及窗外一条预测：`assert (result["tp"], result["fp"], result["fn"], result["duplicates"]) == (1, 2, 1, 1)`；空预测/空标签分母为 null；重叠/共端点窗口、无效目标/时间/内参被拒绝；忽略区间同时排除预测和完全包含标签，部分相交拒绝；`test_each_method_sees_same_target_schedule`；`test_active_hand_switch_cannot_create_contact_entry`；重复运行除耗时外报告一致；读取录制 events 不改变真值。每个解析场景检查 spec 中相应区分，而非强求改进方法在所有场景都最好。
+- [x] **Step 2: Run RED.** `.venv\Scripts\python.exe -m pytest tests/test_evaluation.py -q`。
+- [x] **Step 3: Implement labels, methods and analytic scenarios.** 标签由独立几何/动作定义指定，使用独立代码核对预期事件；禁止从被测输出生成窗口。JSON 输出含证据类型、输入 SHA256、完整方法配置和场景级计数。manifest/输入格式错误转换为可操作 CLI 错误，无 traceback 泄露。
+- [x] **Step 4: Run GREEN and reproducibility smoke.** `.venv\Scripts\python.exe -m depthstrike.evaluation --suite synthetic --output outputs/synthetic-comparison-UNIQUE.json`；报告声明 synthetic，指标与测试手算一致，输出拒绝覆盖。补测 external pose + labels 路径。
+- [x] **Step 5: Commit task files.** `feat: add reproducible labeled interaction comparisons`。
 
 ## Task 6: 集成、交付文档与独立审查
 
@@ -140,12 +140,12 @@
 
 **Interfaces:** 前五项已冻结的 CLI、配置、版本 1/2 与实验标签格式；不在最后一项扩展玩法。
 
-- [ ] **Step 1: Add regression tests first.** 新引导演示 → 录制 → 回放的事件一致；legacy 240 帧仍 6 命中/60 分，旧 4 帧夹具仍 20 分；headless 不导入 SDK/MediaPipe/Open3D；无相机明确失败；不同新参数的 demo 仍可完成引导或明确报告不可达配置；暂停/失效/重置录制往返一致。
-- [ ] **Step 2: Run RED, then fix integration only.** 如测试暴露接口漏接，按最小范围补齐；不松动断轨、深度有效性或安全测试来获得通过。
-- [ ] **Step 3: Verify fresh outputs.** `.venv\Scripts\python.exe -m pytest -q`；可用时 `$env:DEPTHSTRIKE_GUI_TESTS='1'` 后再运行完整测试；`.venv\Scripts\python.exe -m pip check`；demo/两类回放/评估/metrics CLI；重新构建 wheel 并在隔离环境执行 headless smoke，核心只需 NumPy。
-- [ ] **Step 4: Document measured evidence and camera checklist.** 安装命令保持可执行；更新默认 guided 流程和 legacy 命令，给出 v2/标签字段、图形/音频可选项及性能计时口径。列出实机仍待验收的采集、对齐、遮挡、参数与延迟，不将本轮结果标为实机通过。
-- [ ] **Step 5: Request one fresh independent whole-branch review.** 按 requesting-code-review 技能提交明确 base/head、设计和验证记录。处理实际缺陷并增加回归，重跑受影响项与全套；若需改变产品范围先征询用户。
-- [ ] **Step 6: Final verification and local commit.** `git diff --check`、检查提交文件和 clean status；提交文档与最终修复。遵循 finishing-a-development-branch 技能汇报本地分支结果；不 push、合并或创建 PR，除非用户另行授权。
+- [x] **Step 1: Add regression tests first.** 新引导演示 → 录制 → 回放的事件一致；legacy 240 帧仍 6 命中/60 分，旧 4 帧夹具仍 20 分；headless 不导入 SDK/MediaPipe/Open3D；无相机明确失败；不同新参数的 demo 仍可完成引导或明确报告不可达配置；暂停/失效/重置录制往返一致。
+- [x] **Step 2: Run RED, then fix integration only.** 如测试暴露接口漏接，按最小范围补齐；不松动断轨、深度有效性或安全测试来获得通过。
+- [x] **Step 3: Verify fresh outputs.** `.venv\Scripts\python.exe -m pytest -q`；可用时 `$env:DEPTHSTRIKE_GUI_TESTS='1'` 后再运行完整测试；`.venv\Scripts\python.exe -m pip check`；demo/两类回放/评估/metrics CLI；重新构建 wheel 并在隔离环境执行 headless smoke，核心只需 NumPy。
+- [x] **Step 4: Document measured evidence and camera checklist.** 安装命令保持可执行；更新默认 guided 流程和 legacy 命令，给出 v2/标签字段、图形/音频可选项及性能计时口径。列出实机仍待验收的采集、对齐、遮挡、参数与延迟，不将本轮结果标为实机通过。
+- [x] **Step 5: Request one fresh independent whole-branch review.** 按 requesting-code-review 技能提交明确 base/head、设计和验证记录。处理实际缺陷并增加回归，重跑受影响项与全套；若需改变产品范围先征询用户。
+- [x] **Step 6: Final verification and local commit.** `git diff --check`、检查提交文件和 clean status；提交文档与最终修复。遵循 finishing-a-development-branch 技能汇报本地分支结果；不 push、合并或创建 PR，除非用户另行授权。
 
 ## 计划自检
 

@@ -20,6 +20,7 @@ GUIDANCE = {
     "restore_position": "Return your shoulders to the starting position",
     "adjust_distance": "Adjust your distance, then press R",
     "reach_too_small": "Reach is too short; retry comfortably or press R",
+    "target_unreachable": "Check target height / reach direction; press R to retry",
     "missing_body": "Keep both shoulders, elbows and wrists visible",
     "timestamp_invalid": "Waiting for continuous input",
     "practice_left": "Practice: strike the blue ball with your left fist",
