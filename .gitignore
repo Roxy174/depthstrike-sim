@@ -29,6 +29,7 @@ dist/
 /recordings/
 /outputs/
 /.cache/
+/Log/
 
 # Operating-system files
 .DS_Store
