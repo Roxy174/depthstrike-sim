@@ -125,3 +125,19 @@ def test_repeated_trajectory_is_deterministic(skeleton):
             sim.step(skeleton(.2, right_z=1.4)),
         ]])
     assert results[0] == results[1]
+
+
+def test_background_contamination_cannot_turn_stationary_wrist_into_attack(skeleton):
+    from depthstrike.fusion import estimate_joint
+    from depthstrike.types import Landmark
+    from test_fusion import rgbd
+    sim = simulation()
+    for n in range(8):
+        assert sim.step(skeleton(n/10, left_z=1.85-.05*n)).score == 0
+    depth = rgbd(2.5)
+    depth.depth_m[256, 240] = 1.5
+    contaminated = estimate_joint(Landmark(.375, 256/480, .95), depth, sim.config)
+    frame = skeleton(.8, left_z=1.5)
+    sim.step(replace(frame, joints={**frame.joints, "left_wrist": contaminated}))
+    restored = sim.step(skeleton(.9, left_z=1.5))
+    assert restored.score == 0 and not restored.events

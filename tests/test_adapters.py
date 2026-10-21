@@ -194,3 +194,14 @@ def test_recording_metadata_identifies_pose_model():
     estimator = SimpleNamespace(close=lambda: None, metadata={"sha256": "known-model-digest"})
     with CameraPoseSource(AppConfig(), capture=capture, estimator=estimator) as source:
         assert source.describe()["pose_model"]["sha256"] == "known-model-digest"
+
+
+def test_sdk_exception_during_capture_is_actionable_and_releases_device():
+    from depthstrike.capture import GeminiSource
+    class SDKError(Exception): pass
+    sdk, pipeline = sdk_boundary()
+    def fail(timeout): raise SDKError("device disconnected")
+    pipeline.wait_for_frames = fail
+    with pytest.raises(DepthStrikeError, match="disconnected"):
+        with GeminiSource(AppConfig(), sdk=sdk) as source: source.read()
+    assert pipeline.stopped

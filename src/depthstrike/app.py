@@ -52,6 +52,21 @@ def run_session(source, simulation, view, recorder=None, max_frames=None, *,
                 continue
             if frame is None: break
             last_success = clock()
+            if realtime:
+                if first_t is None: first_t, first_wall = frame.timestamp_s, clock()
+                deadline = first_wall+frame.timestamp_s-first_t
+                quit_requested = False
+                while deadline-clock() > 0:
+                    wait_actions = view.poll_actions()
+                    if "quit" in wait_actions:
+                        quit_requested = True
+                        break
+                    apply(wait_actions)
+                    pending.extend(wait_actions)
+                    # poll_actions pumps both windows; keep the last presented
+                    # image until this frame is due, without duplicate trails.
+                    time.sleep(min(.05, max(0., deadline-clock())))
+                if quit_requested: break
             replay_actions = list(getattr(source, "actions", ()))
             apply(replay_actions)
             pending.extend(replay_actions)
@@ -62,10 +77,6 @@ def run_session(source, simulation, view, recorder=None, max_frames=None, *,
                 if rgbd is None: raise DepthStrikeError("RGB-D recording requires a paired RGB-D source")
                 rgbd_recorder.write(rgbd, actions=pending)
             pending = []
-            if realtime:
-                if first_t is None: first_t, first_wall = frame.timestamp_s, clock()
-                delay = min(.05, max(0., first_wall+frame.timestamp_s-first_t-clock()))
-                if delay: time.sleep(delay)
             view.render(state, rgbd)
             count += 1
             if state.status == "FINISHED": break

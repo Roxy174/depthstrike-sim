@@ -63,3 +63,11 @@ def test_live_calibrated_transform_used():
     frame = replace(rgbd(), deproject=lambda u, v, z: np.array([.1, .2, z]))
     skeleton = fuse_skeleton(frame, {"left_wrist": Landmark(.5, .5, .9)}, AppConfig())
     assert skeleton.joints["left_wrist"].position == pytest.approx((.1, .2, 2))
+
+
+@pytest.mark.parametrize("center", [1.5, 0.])
+def test_background_dominated_neighborhood_cannot_replace_center_surface(center):
+    from depthstrike.fusion import estimate_joint
+    frame = rgbd(2.5)
+    frame.depth_m[240, 320] = center
+    assert estimate_joint(Landmark(.5, .5, .95), frame, AppConfig()).position is None

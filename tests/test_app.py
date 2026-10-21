@@ -97,3 +97,43 @@ def test_initial_camera_frames_target_region(skeleton):
             pixel = camera.intrinsic.intrinsic_matrix @ xyz[:3]
             u, v = pixel[:2]/pixel[2]
             assert 50 < u < 910 and 50 < v < 670, (u, v)
+
+
+class FakeClock:
+    def __init__(self): self.now = 0.
+    def __call__(self): return self.now
+    def sleep(self, duration): self.now += duration
+
+
+def test_low_fps_replay_preserves_elapsed_time(monkeypatch):
+    from depthstrike import app
+    from depthstrike.sources import DemoPoseSource
+    clock = FakeClock()
+    monkeypatch.setattr(app.time, "sleep", clock.sleep)
+    summary = app.run_session(DemoPoseSource(fps=5, total_frames=6), sim(), View(),
+                              realtime=True, clock=clock)
+    assert summary.frames == 6
+    assert clock.now == pytest.approx(1.)
+
+
+def test_long_replay_wait_remains_responsive_to_quit(monkeypatch):
+    from depthstrike import app
+    from depthstrike.sources import DemoPoseSource
+    clock = FakeClock()
+    monkeypatch.setattr(app.time, "sleep", clock.sleep)
+    class QuitWhileWaiting(View):
+        def poll_actions(self): return ["quit"] if clock.now >= .15 else []
+    source = DemoPoseSource(fps=1, total_frames=3)
+    summary = app.run_session(source, sim(), QuitWhileWaiting(), realtime=True, clock=clock)
+    assert clock.now <= .21 and summary.frames == 1 and source.closed
+
+
+def test_timed_replay_presents_each_skeleton_sample_once(monkeypatch):
+    from depthstrike import app
+    from depthstrike.sources import DemoPoseSource
+    clock, view = FakeClock(), View()
+    monkeypatch.setattr(app.time, "sleep", clock.sleep)
+    app.run_session(DemoPoseSource(fps=5, total_frames=3), sim(), view,
+                    realtime=True, clock=clock)
+    # Event pumping while waiting must not inject duplicate track samples.
+    assert [s.skeleton.frame_id for s in view.states] == [0, 1, 2]

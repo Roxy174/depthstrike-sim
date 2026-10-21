@@ -109,3 +109,28 @@ def test_recording_never_overwrites_existing_data(tmp_path, skeleton):
     directory = tmp_path / "data"
     directory.mkdir()
     with pytest.raises(FileExistsError): RGBDRecorder(directory, AppConfig())
+
+
+def test_empty_array_reports_corrupt_recording_not_raw_eof(tmp_path):
+    from depthstrike.recording import RGBDRecorder, RGBDReplaySource
+    from test_fusion import rgbd
+    directory = tmp_path/"broken"
+    with RGBDRecorder(directory, AppConfig()) as recorder: recorder.write(rgbd())
+    (directory/"000000_rgb.npy").write_bytes(b"")
+    with RGBDReplaySource(directory) as source:
+        with pytest.raises(ValueError, match="array|recording|NPY"): source.read()
+
+
+def test_array_shape_is_bounded_before_loading_payload(tmp_path, monkeypatch):
+    from depthstrike.recording import RGBDRecorder, RGBDReplaySource
+    from test_fusion import rgbd
+    directory = tmp_path/"oversized"
+    with RGBDRecorder(directory, AppConfig()) as recorder: recorder.write(rgbd())
+    with (directory/"000000_rgb.npy").open("wb") as stream:
+        np.lib.format.write_array_header_1_0(stream, {
+            "descr": "<f4", "fortran_order": False, "shape": (10**10,)})
+    # Never actually attempt the dangerous 40 GB allocation in a regression test.
+    def forbidden(*args, **kwargs): raise AssertionError("Unsafe payload load before header validation")
+    monkeypatch.setattr(np, "load", forbidden)
+    with RGBDReplaySource(directory) as source:
+        with pytest.raises(ValueError, match="large|size|shape|bytes"): source.read()

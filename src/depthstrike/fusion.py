@@ -32,6 +32,10 @@ def estimate_joint(landmark: Landmark, frame: RGBDFrame, config: AppConfig) -> J
     i = frame.intrinsics
     u, v = landmark.u*i.width, landmark.v*i.height
     x, y = min(round(u), i.width-1), min(round(v), i.height-1)
+    center_depth = float(frame.depth_m[y, x])
+    # A valid neighboring background is not evidence for an occluded joint.
+    if not np.isfinite(center_depth) or not config.min_depth_m <= center_depth <= config.max_depth_m:
+        return invalid
     r = config.depth_window_px // 2
     patch = frame.depth_m[max(0, y-r):min(i.height, y+r+1),
                           max(0, x-r):min(i.width, x+r+1)]
@@ -41,6 +45,8 @@ def estimate_joint(landmark: Landmark, frame: RGBDFrame, config: AppConfig) -> J
     if np.ptp(np.quantile(valid, [.1, .9])) > config.depth_max_spread_m:
         return invalid
     z = float(np.median(valid))
+    if abs(z-center_depth) > config.depth_max_spread_m:
+        return invalid
     position = frame.deproject(u, v, z) if frame.deproject else deproject_pixel(u, v, z, i)
     return Joint3D(position, landmark.confidence)
 

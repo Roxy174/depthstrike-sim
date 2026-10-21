@@ -1,6 +1,8 @@
 """Versioned, streaming replay formats. No pickle and no silent overwrites."""
 from dataclasses import asdict
 import json
+import math
+import os
 from pathlib import Path
 
 import numpy as np
@@ -149,18 +151,35 @@ class RGBDReplaySource(_Reader):
         self.directory = Path(directory).resolve()
         super().__init__(self.directory/"frames.jsonl", "depthstrike.rgbd")
 
-    def _array(self, name):
+    def _array(self, name, shape, *, color=False):
         if not isinstance(name, str): raise ValueError("Invalid array filename")
         candidate = (self.directory/name).resolve()
         if not candidate.is_relative_to(self.directory) or candidate.suffix != ".npy":
             raise ValueError("Array path escapes recording directory")
         try:
-            # Limit allocations before loading headers/data from untrusted recordings.
-            if candidate.stat().st_size > 128*1024*1024:
-                raise ValueError("Recording array too large")
-            return np.load(candidate, allow_pickle=False)
-        except (OSError, TypeError) as exc:
-            raise ValueError(f"Cannot load recording array: {name}") from exc
+            # Validate the declared allocation, not only a potentially tiny file.
+            with candidate.open("rb") as stream:
+                size = os.fstat(stream.fileno()).st_size
+                if size > 128*1024*1024:
+                    raise ValueError("Recording array file too large")
+                version = np.lib.format.read_magic(stream)
+                if version == (1, 0):
+                    declared, _, dtype = np.lib.format.read_array_header_1_0(stream, max_header_size=10000)
+                elif version == (2, 0):
+                    declared, _, dtype = np.lib.format.read_array_header_2_0(stream, max_header_size=10000)
+                else:
+                    raise ValueError("Unsupported NPY version")
+                if any(type(n) is not int or n <= 0 for n in declared) or tuple(declared) != tuple(shape):
+                    raise ValueError("Recording array shape disagrees with image intrinsics")
+                if dtype.hasobject or (dtype != np.dtype("uint8") if color else dtype.kind != "f" or dtype.itemsize > 8):
+                    raise ValueError("Unsupported recording array dtype")
+                byte_count = math.prod(declared)*dtype.itemsize
+                if byte_count > 128*1024*1024 or stream.tell()+byte_count != size:
+                    raise ValueError("Recording array declared size/bytes invalid or truncated")
+                stream.seek(0)
+                return np.load(stream, allow_pickle=False)
+        except (OSError, TypeError, ValueError, EOFError) as exc:
+            raise ValueError(f"Cannot load recording array {name}: {exc}") from exc
 
     def read(self):
         row = self._row()
@@ -170,7 +189,9 @@ class RGBDReplaySource(_Reader):
             values = dict(row["intrinsics"])
             values["distortion"] = tuple(values.get("distortion", ()))
             intrinsics = Intrinsics(**values)
-            color, depth = self._array(row["color"]), self._array(row["depth"])
+            shape = (intrinsics.height, intrinsics.width)
+            color = self._array(row["color"], (*shape, 3), color=True)
+            depth = self._array(row["depth"], shape)
             if not np.isfinite(depth).all():
                 raise ValueError("Recording depth contains non-finite values")
             return RGBDFrame(row["frame_id"], row["timestamp_s"], color, depth, intrinsics)

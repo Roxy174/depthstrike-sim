@@ -105,6 +105,15 @@ class GeminiSource:
             raise DepthStrikeError(f"Gemini RGB-D start failed: {exc}. Check USB, Viewer ownership, SDK/firmware compatibility.") from exc
 
     def read(self) -> RGBDFrame:
+        try:
+            return self._read_frame()
+        except (FrameTimeout, DepthStrikeError, ValueError):
+            raise
+        except Exception as exc:
+            # SDK OBError inherits Exception directly, not RuntimeError.
+            raise DepthStrikeError(f"Gemini capture failed: {exc}. Check USB connection, frame synchronization and device ownership; reconnect before retrying.") from exc
+
+    def _read_frame(self) -> RGBDFrame:
         if self._closed:
             raise DepthStrikeError("Camera already closed")
         frames = self.pipeline.wait_for_frames(self.config.camera_timeout_ms)
