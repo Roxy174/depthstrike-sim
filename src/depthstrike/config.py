@@ -32,10 +32,15 @@ class AppConfig:
     camera_timeout_ms: int = 150
     stream_timeout_s: float = 5.0
     model_path: str = "models/pose_landmarker_lite.task"
+    legacy_sdk_distortion_model: str = "unknown"
 
     def __post_init__(self):
         for item in fields(self):
             value = getattr(self, item.name)
+            if item.name == "legacy_sdk_distortion_model":
+                if value not in ("unknown", "brown_conrady", "none"):
+                    raise ValueError("Unsupported legacy_sdk_distortion_model")
+                continue
             if item.name == "model_path":
                 if not isinstance(value, str) or not value:
                     raise ValueError("model_path must be a non-empty string")
