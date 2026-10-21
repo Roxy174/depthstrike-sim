@@ -159,3 +159,18 @@ def test_explicit_model_download_records_digest_and_never_overwrites(tmp_path):
     with pytest.raises(FileExistsError):
         api["download_model"](destination, opener=lambda url, timeout: io.BytesIO(b"overwrite"))
     assert destination.read_bytes() == data
+
+
+def test_real_model_opens_from_unicode_directory(tmp_path):
+    from pathlib import Path
+    pytest.importorskip("mediapipe")
+    from depthstrike.pose import PoseEstimator
+    from test_fusion import rgbd
+    model = Path("models/pose_landmarker_lite.task")
+    if not model.is_file():
+        pytest.skip("Optional official model not downloaded")
+    target = tmp_path / "模型目录" / "pose.task"
+    target.parent.mkdir()
+    target.write_bytes(model.read_bytes())
+    with PoseEstimator(replace(AppConfig(), model_path=str(target))) as pose:
+        assert pose.detect(rgbd()) == {}

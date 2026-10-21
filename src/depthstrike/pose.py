@@ -43,7 +43,8 @@ class PoseEstimator:
             import mediapipe as mp
             self.mp = mp
             options = mp.tasks.vision.PoseLandmarkerOptions(
-                base_options=mp.tasks.BaseOptions(model_asset_path=str(path.resolve())),
+                # Native fopen in some Windows builds cannot open non-ASCII paths.
+                base_options=mp.tasks.BaseOptions(model_asset_buffer=path.read_bytes()),
                 running_mode=mp.tasks.vision.RunningMode.VIDEO, num_poses=1,
                 min_pose_detection_confidence=config.confidence_threshold,
                 min_pose_presence_confidence=config.confidence_threshold,
