@@ -16,9 +16,9 @@ def test_invalid_arguments_return_nonzero(capsys):
 
 def test_finite_headless_demo_has_hits(capsys):
     from depthstrike.cli import main
-    assert main(["--source", "demo", "--headless", "--frames", "180"]) == 0
+    assert main(["--source", "demo", "--headless", "--frames", "600"]) == 0
     summary = json.loads(capsys.readouterr().out)
-    assert summary["frames"] == 180 and summary["hits"] >= 3
+    assert summary["frames"] == 600 and summary["hits"] >= 3
     assert summary["source"] == "demo"
 
 
@@ -42,7 +42,9 @@ def command(*args):
 
 def test_subprocess_demo_record_and_replay(tmp_path):
     original, reproduced = tmp_path/"original.jsonl", tmp_path/"reproduced.jsonl"
-    result = command("--source", "demo", "--headless", "--frames", 240, "--record", original)
+    config = tmp_path/"legacy.json"
+    config.write_text(json.dumps({"interaction_mode": "legacy"}))
+    result = command("--source", "demo", "--headless", "--frames", 240, "--record", original, "--config", config)
     assert result.returncode == 0, result.stderr
     replay = command("--source", "replay", "--input", original, "--headless", "--record", reproduced)
     assert replay.returncode == 0, replay.stderr

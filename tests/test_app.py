@@ -31,7 +31,7 @@ class View:
     def close(self): self.closed = True
 
 
-def sim(): return BoxingSimulation(replace(AppConfig(), smoothing_tau_s=0, calibration_duration_s=0))
+def sim(): return BoxingSimulation(replace(AppConfig(), interaction_mode="legacy", smoothing_tau_s=0, calibration_duration_s=0))
 
 
 def test_eof_and_source_failure_close_all_resources(skeleton):
@@ -110,7 +110,7 @@ def test_low_fps_replay_preserves_elapsed_time(monkeypatch):
     from depthstrike.sources import DemoPoseSource
     clock = FakeClock()
     monkeypatch.setattr(app.time, "sleep", clock.sleep)
-    summary = app.run_session(DemoPoseSource(fps=5, total_frames=6), sim(), View(),
+    summary = app.run_session(DemoPoseSource(config=sim().config, fps=5, total_frames=6), sim(), View(),
                               realtime=True, clock=clock)
     assert summary.frames == 6
     assert clock.now == pytest.approx(1.)
@@ -123,7 +123,7 @@ def test_long_replay_wait_remains_responsive_to_quit(monkeypatch):
     monkeypatch.setattr(app.time, "sleep", clock.sleep)
     class QuitWhileWaiting(View):
         def poll_actions(self): return ["quit"] if clock.now >= .15 else []
-    source = DemoPoseSource(fps=1, total_frames=3)
+    source = DemoPoseSource(config=sim().config, fps=1, total_frames=3)
     summary = app.run_session(source, sim(), QuitWhileWaiting(), realtime=True, clock=clock)
     assert clock.now <= .21 and summary.frames == 1 and source.closed
 
@@ -133,7 +133,7 @@ def test_timed_replay_presents_each_skeleton_sample_once(monkeypatch):
     from depthstrike.sources import DemoPoseSource
     clock, view = FakeClock(), View()
     monkeypatch.setattr(app.time, "sleep", clock.sleep)
-    app.run_session(DemoPoseSource(fps=5, total_frames=3), sim(), view,
+    app.run_session(DemoPoseSource(config=sim().config, fps=5, total_frames=3), sim(), view,
                     realtime=True, clock=clock)
     # Event pumping while waiting must not inject duplicate track samples.
     assert [s.skeleton.frame_id for s in view.states] == [0, 1, 2]

@@ -56,12 +56,12 @@ def test_speed_uses_frame_interval(dt, expected):
 
 def simulation(**changes):
     from depthstrike.boxing import BoxingSimulation
-    return BoxingSimulation(replace(AppConfig(), smoothing_tau_s=0, calibration_duration_s=0, **changes))
+    return BoxingSimulation(replace(AppConfig(), interaction_mode="legacy", smoothing_tau_s=0, calibration_duration_s=0, **changes))
 
 
 def test_calibration_requires_stable_neutral_pose(skeleton):
     from depthstrike.boxing import BoxingSimulation
-    sim = BoxingSimulation(replace(AppConfig(), calibration_duration_s=.3, smoothing_tau_s=0))
+    sim = BoxingSimulation(replace(AppConfig(), interaction_mode="legacy", calibration_duration_s=.3, smoothing_tau_s=0))
     assert not sim.step(skeleton(0)).targets
     assert not sim.step(skeleton(.15, shift=.3)).targets
     assert not sim.step(skeleton(.3, shift=.3)).targets

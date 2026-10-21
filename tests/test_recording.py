@@ -81,10 +81,10 @@ def test_demo_punches_and_replay_produce_identical_scores(tmp_path):
     from depthstrike.sources import DemoPoseSource
     from depthstrike.recording import PoseRecorder, PoseReplaySource
     path = tmp_path / "demo.jsonl"
-    config = AppConfig()
+    config = AppConfig(interaction_mode="legacy")
     sim = BoxingSimulation(config)
     events = []
-    with DemoPoseSource() as source, PoseRecorder(path, config) as recorder:
+    with DemoPoseSource(config=config) as source, PoseRecorder(path, config) as recorder:
         for _ in range(240):
             frame = source.read()
             state = sim.step(frame)

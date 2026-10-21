@@ -35,7 +35,7 @@ def main(argv=None) -> int:
     try:
         config = load_config(args.config)
         with ExitStack() as setup:
-            if args.source == "demo": source = setup.enter_context(DemoPoseSource())
+            if args.source == "demo": source = setup.enter_context(DemoPoseSource(config=config))
             elif args.source == "replay":
                 source = setup.enter_context(PoseReplaySource(args.input))
                 if args.config is None: config = source.config

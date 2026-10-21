@@ -2,7 +2,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Callable, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .calibration import GuidanceState
+    from .feedback import HandFeedback
 
 import numpy as np
 
@@ -116,6 +120,10 @@ class SceneState:
     events: tuple[HitEvent, ...]
     status: str
     phases: dict[str, str] = field(default_factory=dict)
+    guidance: GuidanceState | None = None
+    fists: dict[str, Joint3D] = field(default_factory=dict)
+    feedback: dict[str, HandFeedback] = field(default_factory=dict)
+    diagnostics: dict[str, str] = field(default_factory=dict)
 
 
 class FrameTimeout(TimeoutError):
