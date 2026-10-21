@@ -64,6 +64,8 @@ def test_temporary_timeout_cancels_attack_but_keeps_rendering(skeleton):
     assert summary.score == 0 and summary.timeouts == 1
     assert len(view.states) >= 3
     assert any(s.status == "WAITING FOR CAMERA" for s in view.states)
+    waiting = next(s for s in view.states if s.status == "WAITING FOR CAMERA")
+    assert not waiting.fists and not waiting.feedback
 
 
 def test_continuous_timeout_exits_with_clear_error(skeleton):
@@ -80,7 +82,7 @@ def test_hud_and_scene_use_valid_finite_coordinates(skeleton):
     from depthstrike.visualization import render_hud, display_position
     state = sim().step(skeleton(0))
     image = render_hud(state, None, AppConfig(), "demo")
-    assert image.shape == (720, 640, 3) and image.dtype.name == "uint8"
+    assert image.shape == (800, 960, 3) and image.dtype.name == "uint8"
     assert tuple(display_position((1, 2, 3))) == (1, -2, -3)
 
 
@@ -89,7 +91,7 @@ def test_initial_camera_frames_target_region(skeleton):
     from depthstrike.visualization import SceneView, display_position
     simulation = sim()
     state = simulation.step(skeleton(0))
-    with SceneView(AppConfig()) as view:
+    with SceneView(AppConfig(), layout="dual") as view:
         view.render(state, None)
         camera = view.vis.get_view_control().convert_to_pinhole_camera_parameters()
         for target in state.targets:

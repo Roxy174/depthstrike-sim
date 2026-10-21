@@ -20,12 +20,15 @@ def main(argv=None) -> int:
     parser.add_argument("--source", choices=("demo", "camera", "replay", "rgbd-replay"), default="demo")
     parser.add_argument("--input", type=Path, help="pose JSONL file or RGB-D recording directory")
     parser.add_argument("--headless", action="store_true")
+    parser.add_argument("--view", choices=("overlay", "dual"), default="overlay")
+    parser.add_argument("--sound", action="store_true", help="optional asynchronous Windows hit sound")
     parser.add_argument("--frames", type=int, help="positive frame limit; headless default: 600")
     parser.add_argument("--config", type=Path)
     parser.add_argument("--record", type=Path, help="new trajectory JSONL file")
     parser.add_argument("--record-rgbd", type=Path, help="new RGB-D directory; contains identifiable images")
     try:
         args = parser.parse_args(argv)
+        if args.headless and args.sound: parser.error("--sound requires a display; remove --headless or --sound")
         if args.frames is not None and args.frames <= 0: parser.error("--frames must be positive")
         if args.source in ("replay", "rgbd-replay") and args.input is None: parser.error("--input required for replay")
         if args.source in ("camera", "demo") and args.input is not None: parser.error("--input only applies to replay")
@@ -46,7 +49,7 @@ def main(argv=None) -> int:
             else:
                 with redirect_stdout(sys.stderr):
                     source = setup.enter_context(CameraPoseSource(config))
-            view = setup.enter_context(SceneView(config, args.source)) if not args.headless else NullView()
+            view = setup.enter_context(SceneView(config, args.source, layout=args.view, sound=args.sound)) if not args.headless else NullView()
             metadata = source.describe() if hasattr(source, "describe") else {"source": args.source}
             recorder = setup.enter_context(PoseRecorder(args.record, config, metadata)) if args.record else None
             rgbd_recorder = setup.enter_context(RGBDRecorder(args.record_rgbd, config, metadata)) if args.record_rgbd else None

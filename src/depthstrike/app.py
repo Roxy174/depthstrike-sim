@@ -45,7 +45,8 @@ def run_session(source, simulation, view, recorder=None, max_frames=None, *,
                 timeouts += 1
                 simulation.invalidate_tracking()
                 if not pending or pending[-1] != "tracking_lost": pending.append("tracking_lost")
-                state = replace(state, skeleton=None, events=(), status="WAITING FOR CAMERA", phases={})
+                state = replace(state, skeleton=None, events=(), status="WAITING FOR CAMERA", phases={},
+                                fists={}, feedback={}, diagnostics={})
                 view.render(state, None)
                 if clock()-last_success >= simulation.config.stream_timeout_s:
                     raise DepthStrikeError(f"No valid RGB-D frames for {simulation.config.stream_timeout_s:g} s. Check USB/synchronization and reconnect the camera.")

@@ -7,6 +7,7 @@ from .config import AppConfig
 from .calibration import GuidedCalibration, valid_body
 from .geometry import segment_sphere_intersection
 from .interaction import estimate_fist
+from .feedback import build_feedback
 from .tracking import SkeletonTracker
 from .types import HitEvent, Joint3D, SceneState, SkeletonFrame, Target
 
@@ -260,14 +261,19 @@ class BoxingSimulation:
                                self._flashes.get(n, -1) > self._elapsed or
                                self._practice_flashes.get(n, -1) > frame.timestamp_s)
                         for n, (hand, center) in enumerate(zip(("left", "right"), self._centers)))
+        phases = {h: s.phase for h, s in states.items()}
+        diagnostics = {h: s.reason for h, s in states.items()}
+        feedback_status = "RUNNING" if status == "CALIBRATING" and guidance.stage.startswith("PRACTICE") else status
+        feedback = build_feedback(fists, targets, phases, feedback_status, self.config, diagnostics)
         return SceneState(frame, targets, self.score, self.hits,
                           max(0., self.config.round_duration_s - self._elapsed), events, status,
-                          {h: s.phase for h, s in states.items()}, guidance, fists,
-                          diagnostics={h: s.reason for h, s in states.items()})
+                          phases, guidance, fists, feedback, diagnostics)
 
     def _state(self, frame, events, status, phases):
         targets = tuple(Target(n, hand, center.copy(), self.config.target_radius_m,
                                n == self._active, self._flashes.get(n, -1) > self._elapsed)
                         for n, (hand, center) in enumerate(zip(("left", "right"), self._centers)))
+        fists = {h: frame.joints.get(f"{h}_wrist", Joint3D(None)) for h in ("left", "right")} if frame else {}
         return SceneState(frame, targets, self.score, self.hits,
-                          max(0., self.config.round_duration_s-self._elapsed), events, status, phases)
+                          max(0., self.config.round_duration_s-self._elapsed), events, status, phases,
+                          fists=fists, feedback=build_feedback(fists, targets, phases, status, self.config, {}))
