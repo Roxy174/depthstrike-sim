@@ -175,3 +175,15 @@ def test_v2_requires_explicit_interaction_mode(tmp_path, skeleton):
     path.write_text("\n".join(json.dumps(row) for row in rows)+"\n")
     with pytest.raises(ValueError, match="mode|config"):
         PoseReplaySource(path)
+
+
+def test_malformed_source_metadata_is_rejected_before_cli_uses_it(tmp_path, skeleton):
+    from depthstrike.recording import PoseRecorder, PoseReplaySource
+    path = tmp_path/"metadata.jsonl"
+    with PoseRecorder(path, AppConfig()) as recorder:
+        recorder.write(skeleton(0), ())
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    rows[0]["metadata"] = []
+    path.write_text("\n".join(json.dumps(row) for row in rows)+"\n")
+    with pytest.raises(ValueError, match="metadata"):
+        PoseReplaySource(path)

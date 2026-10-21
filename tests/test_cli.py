@@ -76,7 +76,7 @@ def test_malformed_header_configuration_reports_error_without_traceback(tmp_path
 def test_camera_unavailable_never_reports_demo_success(monkeypatch, capsys):
     from depthstrike import cli
     from depthstrike.types import DepthStrikeError
-    def unavailable(*args): raise DepthStrikeError("No Gemini camera: connect USB 3")
+    def unavailable(*args, **kwargs): raise DepthStrikeError("No Gemini camera: connect USB 3")
     monkeypatch.setattr(cli, "CameraPoseSource", unavailable)
     assert cli.main(["--source", "camera", "--headless", "--frames", "1"]) != 0
     output = capsys.readouterr()

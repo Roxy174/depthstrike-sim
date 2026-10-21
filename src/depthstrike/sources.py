@@ -1,4 +1,5 @@
 """Common skeleton input boundary: live capture, deterministic demo or replay."""
+from contextlib import nullcontext
 import numpy as np
 
 from .capture import GeminiSource
@@ -10,8 +11,9 @@ from .types import Joint3D, SkeletonFrame
 
 
 class CameraPoseSource:
-    def __init__(self, config, *, capture=None, estimator=None):
+    def __init__(self, config, *, capture=None, estimator=None, metrics=None):
         self.config = config
+        self.metrics = metrics
         self.capture = self.estimator = None
         self.last_rgbd = None
         self.last_landmarks = {}
@@ -24,13 +26,16 @@ class CameraPoseSource:
             raise
 
     def read(self):
-        frame = self.capture.read()
+        with self.metrics.measure("capture") if self.metrics else nullcontext():
+            frame = self.capture.read()
         if frame is None:
             return None
         self.last_rgbd = frame
         self.actions = list(getattr(self.capture, "actions", ()))
-        self.last_landmarks = self.estimator.detect(frame)
-        return fuse_skeleton(frame, self.last_landmarks, self.config)
+        with self.metrics.measure("pose") if self.metrics else nullcontext():
+            self.last_landmarks = self.estimator.detect(frame)
+        with self.metrics.measure("fusion") if self.metrics else nullcontext():
+            return fuse_skeleton(frame, self.last_landmarks, self.config)
 
     def describe(self):
         metadata = self.capture.describe() if hasattr(self.capture, "describe") else {"source": "rgbd-replay"}

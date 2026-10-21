@@ -44,6 +44,8 @@ class _Reader(_Resource):
                     or header.get("coordinates") != COORDINATES):
                 raise ValueError("Unsupported recording header, units or format version")
             self.metadata = header.get("metadata", {})
+            if not isinstance(self.metadata, dict):
+                raise ValueError("Recording metadata must be a JSON object")
             self.format_version = header["version"]
             try:
                 if not isinstance(header.get("config"), dict):
