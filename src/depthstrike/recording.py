@@ -20,7 +20,7 @@ def _dump(value):
 
 
 def _header(kind, config, metadata):
-    return {"format": kind, "version": 1, "unit": "m", "timestamp_unit": "s",
+    return {"format": kind, "version": 2, "unit": "m", "timestamp_unit": "s",
             "coordinates": COORDINATES, "program_version": __version__,
             "config": config.to_dict(), "metadata": metadata or {}}
 
@@ -38,15 +38,23 @@ class _Reader(_Resource):
         self.actions = []
         try:
             header = self._row()
-            if (not header or header.get("format") != kind or header.get("version") != 1
+            if (not header or header.get("format") != kind or type(header.get("version")) is not int
+                    or header.get("version") not in (1, 2)
                     or header.get("unit") != "m" or header.get("timestamp_unit") != "s"
                     or header.get("coordinates") != COORDINATES):
                 raise ValueError("Unsupported recording header, units or format version")
             self.metadata = header.get("metadata", {})
+            self.format_version = header["version"]
             try:
                 if not isinstance(header.get("config"), dict):
                     raise ValueError("Recording config must be a JSON object")
-                self.config = AppConfig(**header["config"])
+                values = dict(header["config"])
+                if self.format_version == 1:
+                    values.setdefault("interaction_mode", "legacy")
+                    values.setdefault("fist_offset_m", 0)
+                elif "interaction_mode" not in values:
+                    raise ValueError("Version 2 recording config requires interaction_mode")
+                self.config = AppConfig(**values)
             except TypeError as exc:
                 raise ValueError(f"Invalid recording config: {exc}") from exc
         except BaseException:
@@ -94,7 +102,8 @@ class PoseRecorder(_Resource):
     def write(self, frame, events, actions=()):
         self.stream.write(_dump({"frame_id": frame.frame_id, "timestamp_s": frame.timestamp_s,
             "joints": {name: {"position": j.position.tolist() if j.position is not None else None,
-                               "confidence": j.confidence} for name, j in frame.joints.items()},
+                               "confidence": j.confidence, "invalid_reason": j.invalid_reason}
+                       for name, j in frame.joints.items()},
             "events": [asdict(e) for e in events], "actions": list(actions)}))
 
     def close(self): self.stream.close()
@@ -112,7 +121,8 @@ class PoseReplaySource(_Reader):
         try:
             if not isinstance(row["joints"], dict) or len(row["joints"]) > 100:
                 raise ValueError("Invalid joint map")
-            joints = {name: Joint3D(j["position"], j["confidence"]) for name, j in row["joints"].items()}
+            joints = {name: Joint3D(j["position"], j["confidence"], j.get("invalid_reason"))
+                      for name, j in row["joints"].items()}
             self.recorded_events = tuple(HitEvent(**e) for e in row.get("events", []))
             return SkeletonFrame(row["frame_id"], row["timestamp_s"], joints)
         except (KeyError, TypeError) as exc:

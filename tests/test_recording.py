@@ -134,3 +134,44 @@ def test_array_shape_is_bounded_before_loading_payload(tmp_path, monkeypatch):
     monkeypatch.setattr(np, "load", forbidden)
     with RGBDReplaySource(directory) as source:
         with pytest.raises(ValueError, match="large|size|shape|bytes"): source.read()
+
+
+def test_quality_reason_survives_tracking_and_v2_roundtrip(tmp_path, skeleton):
+    from depthstrike.recording import PoseRecorder, PoseReplaySource
+    from depthstrike.tracking import SkeletonTracker
+    from depthstrike.types import Joint3D
+    frame = skeleton(0)
+    frame = replace(frame, joints={**frame.joints,
+                                  "left_wrist": Joint3D(None, invalid_reason="invalid_depth")})
+    filtered = SkeletonTracker(AppConfig()).update(frame)
+    assert filtered.joints["left_wrist"].invalid_reason == "invalid_depth"
+    path = tmp_path/"quality.jsonl"
+    with PoseRecorder(path, AppConfig()) as recorder:
+        recorder.write(frame, ())
+    assert json.loads(path.read_text().splitlines()[0])["version"] == 2
+    with PoseReplaySource(path) as source:
+        assert source.read().joints["left_wrist"].invalid_reason == "invalid_depth"
+        assert source.config.interaction_mode == "guided"
+
+
+def test_v1_fixture_retains_legacy_mode_and_twenty_points():
+    from depthstrike.app import run_session
+    from depthstrike.recording import PoseReplaySource
+    from depthstrike.visualization import NullView
+    with PoseReplaySource("tests/fixtures/straight_punches.jsonl") as source:
+        assert source.config.interaction_mode == "legacy"
+        summary = run_session(source, BoxingSimulation(source.config), NullView())
+    assert (summary.frames, summary.hits, summary.score) == (4, 2, 20)
+
+
+def test_v2_requires_explicit_interaction_mode(tmp_path, skeleton):
+    from depthstrike.recording import PoseRecorder, PoseReplaySource
+    path = tmp_path/"v2.jsonl"
+    with PoseRecorder(path, AppConfig()) as recorder:
+        recorder.write(skeleton(0), ())
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    rows[0]["version"] = 2
+    rows[0]["config"].pop("interaction_mode", None)
+    path.write_text("\n".join(json.dumps(row) for row in rows)+"\n")
+    with pytest.raises(ValueError, match="mode|config"):
+        PoseReplaySource(path)

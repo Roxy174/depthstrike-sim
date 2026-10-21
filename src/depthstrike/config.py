@@ -7,6 +7,14 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class AppConfig:
+    interaction_mode: str = "guided"
+    fist_offset_m: float = .06
+    forearm_min_length_m: float = .02
+    reach_hold_s: float = .35
+    return_guard_s: float = .20
+    reach_min_increment_m: float = .10
+    target_reach_ratio: float = .85
+    countdown_s: float = 2.0
     hand_radius_m: float = .06
     target_radius_m: float = .08
     confidence_threshold: float = .6
@@ -37,6 +45,10 @@ class AppConfig:
     def __post_init__(self):
         for item in fields(self):
             value = getattr(self, item.name)
+            if item.name == "interaction_mode":
+                if value not in ("guided", "legacy"):
+                    raise ValueError("interaction_mode must be guided or legacy")
+                continue
             if item.name == "legacy_sdk_distortion_model":
                 if value not in ("unknown", "brown_conrady", "none"):
                     raise ValueError("Unsupported legacy_sdk_distortion_model")
@@ -47,8 +59,10 @@ class AppConfig:
                 continue
             if isinstance(value, bool) or not isinstance(value, (float, int)) or not math.isfinite(value):
                 raise ValueError(f"{item.name} must be finite and numeric")
-            if value < 0 or (value == 0 and item.name not in {"smoothing_tau_s", "calibration_duration_s", "target_height_m"}):
+            if value < 0 or (value == 0 and item.name not in {"smoothing_tau_s", "calibration_duration_s", "target_height_m", "fist_offset_m"}):
                 raise ValueError(f"{item.name} must be positive")
+        if not 0 < self.target_reach_ratio < 1:
+            raise ValueError("target_reach_ratio must be in (0, 1)")
         for name in ("confidence_threshold", "depth_min_valid_ratio"):
             if getattr(self, name) > 1:
                 raise ValueError(f"{name} must be in (0, 1]")

@@ -1,4 +1,6 @@
 {
+  "interaction_mode": "guided",
+  "fist_offset_m": 0.06,
   "hand_radius_m": 0.06,
   "target_radius_m": 0.08,
   "confidence_threshold": 0.6,

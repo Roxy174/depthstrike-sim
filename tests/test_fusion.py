@@ -71,3 +71,13 @@ def test_background_dominated_neighborhood_cannot_replace_center_surface(center)
     frame = rgbd(2.5)
     frame.depth_m[240, 320] = center
     assert estimate_joint(Landmark(.5, .5, .95), frame, AppConfig()).position is None
+
+
+@pytest.mark.parametrize("landmark,depth,want", [
+    (Landmark(.5, .5, .1), 2, "low_confidence"),
+    (Landmark(-.1, .5, .9), 2, "out_of_frame"),
+    (Landmark(.5, .5, .9), 0, "invalid_depth"),
+])
+def test_fusion_reports_current_invalid_reason(landmark, depth, want):
+    from depthstrike.fusion import estimate_joint
+    assert estimate_joint(landmark, rgbd(depth), AppConfig()).invalid_reason == want

@@ -28,3 +28,21 @@ def test_missing_configuration_not_silently_defaulted(tmp_path):
     from depthstrike.config import load_config
     with pytest.raises(FileNotFoundError):
         load_config(tmp_path / "missing.json")
+
+
+@pytest.mark.parametrize("values", [
+    {"interaction_mode": "automatic"}, {"interaction_mode": True},
+    {"fist_offset_m": -1}, {"target_reach_ratio": 1},
+    {"target_reach_ratio": 0}, {"reach_hold_s": 0},
+    {"forearm_min_length_m": float("nan")}, {"countdown_s": False},
+])
+def test_invalid_guided_configuration_rejected(values):
+    from depthstrike.config import AppConfig
+    with pytest.raises(ValueError):
+        AppConfig(**values)
+
+
+def test_guided_defaults_and_zero_fist_offset_are_supported():
+    from depthstrike.config import AppConfig
+    assert AppConfig().interaction_mode == "guided"
+    assert AppConfig(fist_offset_m=0).fist_offset_m == 0

@@ -63,10 +63,15 @@ class Landmark:
 class Joint3D:
     position: np.ndarray | None
     confidence: float = 0.0
+    invalid_reason: str | None = None
 
     def __post_init__(self):
         if not np.isfinite(self.confidence) or not 0 <= self.confidence <= 1:
             raise ValueError("Joint confidence must be in [0, 1]")
+        if self.invalid_reason is not None and (
+                not isinstance(self.invalid_reason, str) or not 0 < len(self.invalid_reason) <= 128
+                or self.position is not None):
+            raise ValueError("Invalid reason is only allowed on an invalid joint")
         if self.position is not None:
             object.__setattr__(self, "position", vector3(self.position))
 

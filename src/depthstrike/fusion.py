@@ -24,29 +24,30 @@ def deproject_pixel(u: float, v: float, z: float, intrinsics: Intrinsics) -> np.
 
 
 def estimate_joint(landmark: Landmark, frame: RGBDFrame, config: AppConfig) -> Joint3D:
-    invalid = Joint3D(None)
-    if (not np.isfinite((landmark.u, landmark.v, landmark.confidence)).all()
-            or not config.confidence_threshold <= landmark.confidence <= 1
+    if (not np.isfinite(landmark.confidence)
+            or not config.confidence_threshold <= landmark.confidence <= 1):
+        return Joint3D(None, invalid_reason="low_confidence")
+    if (not np.isfinite((landmark.u, landmark.v)).all()
             or not (0 <= landmark.u < 1 and 0 <= landmark.v < 1)):
-        return invalid
+        return Joint3D(None, invalid_reason="out_of_frame")
     i = frame.intrinsics
     u, v = landmark.u*i.width, landmark.v*i.height
     x, y = min(round(u), i.width-1), min(round(v), i.height-1)
     center_depth = float(frame.depth_m[y, x])
     # A valid neighboring background is not evidence for an occluded joint.
     if not np.isfinite(center_depth) or not config.min_depth_m <= center_depth <= config.max_depth_m:
-        return invalid
+        return Joint3D(None, invalid_reason="invalid_depth")
     r = config.depth_window_px // 2
     patch = frame.depth_m[max(0, y-r):min(i.height, y+r+1),
                           max(0, x-r):min(i.width, x+r+1)]
     valid = patch[np.isfinite(patch) & (patch >= config.min_depth_m) & (patch <= config.max_depth_m)]
     if valid.size < patch.size*config.depth_min_valid_ratio:
-        return invalid
+        return Joint3D(None, invalid_reason="insufficient_depth")
     if np.ptp(np.quantile(valid, [.1, .9])) > config.depth_max_spread_m:
-        return invalid
+        return Joint3D(None, invalid_reason="depth_discontinuity")
     z = float(np.median(valid))
     if abs(z-center_depth) > config.depth_max_spread_m:
-        return invalid
+        return Joint3D(None, invalid_reason="depth_discontinuity")
     position = frame.deproject(u, v, z) if frame.deproject else deproject_pixel(u, v, z, i)
     return Joint3D(position, landmark.confidence)
 
