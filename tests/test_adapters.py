@@ -174,3 +174,23 @@ def test_real_model_opens_from_unicode_directory(tmp_path):
     target.write_bytes(model.read_bytes())
     with PoseEstimator(replace(AppConfig(), model_path=str(target))) as pose:
         assert pose.detect(rgbd()) == {}
+
+
+def test_rgbd_replay_actions_reach_skeleton_source(tmp_path):
+    from depthstrike.recording import RGBDRecorder, RGBDReplaySource
+    from depthstrike.sources import CameraPoseSource
+    from test_fusion import rgbd
+    with RGBDRecorder(tmp_path/"rgbd", AppConfig()) as recorder:
+        recorder.write(rgbd(), actions=["pause"])
+    estimator = SimpleNamespace(detect=lambda f: {}, close=lambda: None)
+    with CameraPoseSource(AppConfig(), capture=RGBDReplaySource(tmp_path/"rgbd"), estimator=estimator) as source:
+        source.read()
+        assert source.actions == ["pause"]
+
+
+def test_recording_metadata_identifies_pose_model():
+    from depthstrike.sources import CameraPoseSource
+    capture = SimpleNamespace(close=lambda: None, describe=lambda: {"firmware": "test"})
+    estimator = SimpleNamespace(close=lambda: None, metadata={"sha256": "known-model-digest"})
+    with CameraPoseSource(AppConfig(), capture=capture, estimator=estimator) as source:
+        assert source.describe()["pose_model"]["sha256"] == "known-model-digest"

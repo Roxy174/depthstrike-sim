@@ -6,8 +6,8 @@
 
 - 工作名称：**DepthStrike**，由 Depth（深度视觉）和 Strike（打击）组合而成。
 - GitHub 仓库：[Roxy174/depthstrike-sim](https://github.com/Roxy174/depthstrike-sim)，可见性为 **Private**。
-- 文档日期：2026-10-20。
-- 当前状态：项目设计阶段；本文描述拟实现的功能，不代表代码或实验已经完成。
+- 文档日期：2026-10-21。
+- 本文保留整体设计；首版实现范围为阶段 A/B 的目标球场景。实际验证边界见 [验证记录](docs/VERIFICATION.md)，阶段 C 对练仍为后续设计。
 - 命名说明：这是项目工作名，尚未核验商标或全网名称唯一性；不作为新算法名称使用。
 
 ## 1. 项目概述
@@ -90,7 +90,7 @@ DepthStrike 使用 Orbbec Gemini 2 深度摄像头获取玩家的 RGB-D 数据�
 
 | 组件 | 职责 | 说明 |
 | --- | --- | --- |
-| Python | 核心程序 | 初步考虑 Python 3.10；M0 验证后固定兼容版本 |
+| Python | 核心程序 | 当前验证环境为 Python 3.12.7；依赖固定于 pyproject.toml |
 | Orbbec SDK / Python Wrapper | RGB-D 采集、对齐、内参读取与录制 | SDK 与 Gemini 2 固件需配套，不盲目升级固件 |
 | MediaPipe Pose Landmarker | 预训练人体关键点检测 | 不直接把其身体局部三维坐标当相机绝对坐标 |
 | NumPy | 坐标、轨迹和几何运算 | 核心碰撞逻辑不依赖显示窗口或相机 |
@@ -98,7 +98,7 @@ DepthStrike 使用 Orbbec Gemini 2 深度摄像头获取玩家的 RGB-D 数据�
 | Open3D | 三维骨架、目标和碰撞区域可视化 | 不自动提供格斗规则或物理系统 |
 | pytest | 自动化测试 | 使用合成轨迹和离线记录测试 |
 
-本表是技术选型，不是已验证的依赖清单。开发时记录 Python、SDK、模型、Open3D 及操作系统版本，完成兼容性验证后提交依赖定义与锁定文件。首期不假定必须有 CUDA，也不承诺未知电脑上的实时性能。
+本表为组件职责；具体版本与测试证据见运行和验证文档。首期不要求 CUDA，也不承诺未知电脑上的实时性能。实际设备、固件与人体动作仍需独立联调。
 
 ## 5. 总体流程与模块边界
 
@@ -211,7 +211,7 @@ Y = (v - cy) × Z / fy
 
 ## 9. 建议仓库结构
 
-以下均为计划结构，本次仅交付设计文档，并未生成代码目录或可运行入口。
+首版采用平面模块以保持接口清晰；完整对战与评估模块随后扩展：
 
 ```text
 depthstrike-sim/
@@ -221,15 +221,10 @@ depthstrike-sim/
 ├── .gitignore
 ├── configs/                  # 可提交的默认配置，不包含密钥
 ├── src/depthstrike/
-│   ├── capture/
-│   ├── pose/
-│   ├── fusion/
-│   ├── tracking/
-│   ├── geometry/
-│   ├── combat/
-│   ├── visualization/
-│   ├── recording/
-│   └── evaluation/
+│   ├── capture.py / pose.py / fusion.py
+│   ├── tracking.py / geometry.py / boxing.py
+│   ├── sources.py / recording.py
+│   └── visualization.py / app.py / cli.py
 ├── tests/
 │   └── fixtures/             # 小型合成轨迹和预期结果
 ├── data/
@@ -241,7 +236,7 @@ depthstrike-sim/
 └── docs/                     # 安装说明、实验、报告与分工记录
 ```
 
-实现时区分真实相机、文件回放和合成输入，提供统一入口与参数。命令、模型下载路径和可执行程序生成方式在实际验证后写入 README；本文不提供尚不存在的启动命令。
+统一入口为 `python -m depthstrike`；相机、合成输入和两类回放通过 `--source` 区分。具体命令见 [RUNNING.md](docs/RUNNING.md)。独立可执行程序的打包发行不在首版范围。
 
 ## 10. 里程碑与验收
 
@@ -296,8 +291,8 @@ depthstrike-sim/
 
 1. 远端仓库为 `Roxy174/depthstrike-sim`，可见性为 **Private**，描述为：`RGB-D skeleton-guided 3D combat interaction simulator using Orbbec Gemini 2.`
 2. 按用户决定，直接以 `D:\3D视觉` 为本地仓库根目录，不另建项目子目录。课程材料继续保留在原位置，由根目录 `.gitignore` 明确排除 `Shares/`、`$dst/` 等目录。
-3. 默认开发分支使用 `main`；初始化只纳入 `.gitignore`、`README.md` 和 `PROJECT.md`，不上传课程资料、模型权重或原始采集数据。
-4. 本文作为仓库的 `PROJECT.md`，README 保持简明，说明实际实现状态；安装运行方式和测试数据入口在代码验证后补充。
+3. `main` 为主分支；首版在 `feature/boxing-target-prototype` 本地分支开发。普通历史纳入代码、配置、说明和合成测试，不上传课程资料、模型权重或原始采集数据。
+4. 本文作为仓库的 `PROJECT.md`，README 保持简明；安装、运行和测试数据入口集中于 `docs/RUNNING.md`，验证边界单独维护。
 5. 按需邀请组员；私有权限不替代数据授权，也不应提交密码、令牌或个人敏感信息。
 
 创建方式参考 [GitHub 官方文档](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-new-repository)。仓库初始化不代表模拟器已完成；后续功能以实际代码、测试与演示记录为准。
@@ -350,7 +345,7 @@ outputs/
 | 窗口或推理阻塞 | 有界数据传递；显示更新遵守图形库线程要求 |
 | 项目变成只有美术的游戏 | 优先完成可测试的视觉、几何和攻防模块 |
 | 实际空间或动作范围不足 | 校准舒适可达范围，目标不要求击打实物或靠近设备 |
-| 数据或大文件进入历史 | 独立仓库、默认忽略原始数据、提交前检查 |
+| 数据或大文件进入历史 | 根目录明确忽略课程材料与原始数据，提交前检查 |
 
 ## 14. 最终交付与分工
 

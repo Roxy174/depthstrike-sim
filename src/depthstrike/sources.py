@@ -26,11 +26,13 @@ class CameraPoseSource:
         if frame is None:
             return None
         self.last_rgbd = frame
+        self.actions = list(getattr(self.capture, "actions", ()))
         self.last_landmarks = self.estimator.detect(frame)
         return fuse_skeleton(frame, self.last_landmarks, self.config)
 
     def describe(self):
-        return self.capture.describe() if hasattr(self.capture, "describe") else {"source": "rgbd-replay"}
+        metadata = self.capture.describe() if hasattr(self.capture, "describe") else {"source": "rgbd-replay"}
+        return {**metadata, "pose_model": getattr(self.estimator, "metadata", {})}
 
     def close(self):
         try:

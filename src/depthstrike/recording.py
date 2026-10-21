@@ -41,7 +41,12 @@ class _Reader(_Resource):
                     or header.get("coordinates") != COORDINATES):
                 raise ValueError("Unsupported recording header, units or format version")
             self.metadata = header.get("metadata", {})
-            self.config = AppConfig(**header["config"])
+            try:
+                if not isinstance(header.get("config"), dict):
+                    raise ValueError("Recording config must be a JSON object")
+                self.config = AppConfig(**header["config"])
+            except TypeError as exc:
+                raise ValueError(f"Invalid recording config: {exc}") from exc
         except BaseException:
             self.close()
             raise

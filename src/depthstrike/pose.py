@@ -1,5 +1,6 @@
 """Synchronous MediaPipe VIDEO pose inference on the exact paired RGB frame."""
 from pathlib import Path
+import hashlib
 
 import numpy as np
 
@@ -42,9 +43,12 @@ class PoseEstimator:
         try:
             import mediapipe as mp
             self.mp = mp
+            model_data = path.read_bytes()
+            self.metadata = {"filename": path.name, "sha256": hashlib.sha256(model_data).hexdigest(),
+                             "mediapipe_version": mp.__version__}
             options = mp.tasks.vision.PoseLandmarkerOptions(
                 # Native fopen in some Windows builds cannot open non-ASCII paths.
-                base_options=mp.tasks.BaseOptions(model_asset_buffer=path.read_bytes()),
+                base_options=mp.tasks.BaseOptions(model_asset_buffer=model_data),
                 running_mode=mp.tasks.vision.RunningMode.VIDEO, num_poses=1,
                 min_pose_detection_confidence=config.confidence_threshold,
                 min_pose_presence_confidence=config.confidence_threshold,

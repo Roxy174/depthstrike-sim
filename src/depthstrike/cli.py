@@ -53,7 +53,7 @@ def main(argv=None) -> int:
             # From here run_session owns resources, including every failure path.
             setup.pop_all()
             summary = run_session(source, BoxingSimulation(config), view, recorder,
-                args.frames if args.frames is not None else (600 if args.headless else None),
+                args.frames if args.frames is not None else (600 if args.headless and args.source in ("demo", "camera") else None),
                 rgbd_recorder=rgbd_recorder, realtime=not args.headless and args.source != "camera")
         print(json.dumps({"source": args.source, **asdict(summary)}, allow_nan=False))
         return 0
