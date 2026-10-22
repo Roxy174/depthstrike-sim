@@ -71,6 +71,8 @@ def render_hud(state, rgbd_frame, config, mode="demo", trails=None):
     cv2.rectangle(canvas, (0, 0), (959, 78), (72, 54, 38), -1)
     text("DepthStrike", (25, 36), .95, (255, 255, 255), 2)
     source_label = "Synthetic motion / no camera" if mode == "demo" else f"RGB-D target boxing / {mode}"
+    if state.challenge:
+        source_label = f"Motion challenge / {mode} / {state.challenge['content_evidence']} content"
     text(source_label, (26, 61), .48, (227, 218, 207))
     text(state.status.replace("_", " ").title(), (660, 43), .62, (244, 234, 219), 2)
     if rgbd_frame is None:
@@ -120,6 +122,7 @@ def render_hud(state, rgbd_frame, config, mode="demo", trails=None):
     x, y = 20 + (700-w)//2, 98 + (500-h)//2
     canvas[y:y+h, x:x+w] = cv2.resize(image, (w, h))
     active = next((t.hand for t in state.targets if t.active), None)
+    if state.challenge and active is None: active = state.challenge["hand"]
     text("Setup" if state.guidance and state.guidance.stage != "RUNNING" else "Round", (744, 116), .68, weight=2)
     stage = state.guidance.stage if state.guidance else state.status
     for n, word in enumerate(stage.replace("_", " ").title().split()):
@@ -141,6 +144,11 @@ def render_hud(state, rgbd_frame, config, mode="demo", trails=None):
     elif state.status == "PAUSED": hint = "Paused. Press Space to resume."
     elif state.status == "FINISHED": hint = "Round complete. Press R for another setup."
     else: hint = GUIDANCE.get(guidance.message_code, guidance.message_code) if guidance else "Alternate straight punches towards the camera"
+    if state.challenge and state.status not in ("PAUSED", "WAITING FOR CAMERA", "TRACKING LOST"):
+        c = state.challenge
+        hint = f"Cue {c['cue_index']}/{c['total']}: {c['hand'].title()} hand. "
+        hint += f"Ready in {c['until_window_s']:.2f} s" if c["until_window_s"] > 0 else "Strike inside this time window."
+        if state.status == "FINISHED": hint = "Challenge complete. Open the saved motion review to inspect each cue."
     text(hint, (24, 637), .52, ink, 1)
     cv2.line(canvas, (24, 652), (934, 652), (212, 202, 188), 1)
     text(state.score, (24, 707), 1.35, ink, 2)

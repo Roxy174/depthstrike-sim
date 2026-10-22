@@ -2,6 +2,8 @@
 
 Windows PowerShell，Python 3.12。命令从仓库根目录运行，不需要激活虚拟环境。
 
+本地 `0.3.0.dev0` 的动作生成关卡与三维复盘入口见 [Motion Studio](MOTION_STUDIO.md)。下文保留基础击球场景的安装与运行方式。
+
 ## 1. 安装
 
 ```powershell

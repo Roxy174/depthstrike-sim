@@ -11,6 +11,7 @@ from .app import run_session
 from .boxing import BoxingSimulation
 from .config import load_config
 from .metrics import StageMetrics
+from .motion_challenge import ChallengeRecipe, file_sha256, write_json_exclusive
 from .recording import PoseRecorder, PoseReplaySource, RGBDRecorder, RGBDReplaySource
 from .sources import CameraPoseSource, DemoPoseSource
 from .types import DepthStrikeError
@@ -29,11 +30,15 @@ def main(argv=None) -> int:
     parser.add_argument("--record", type=Path, help="new trajectory JSONL file")
     parser.add_argument("--record-rgbd", type=Path, help="new RGB-D directory; contains identifiable images")
     parser.add_argument("--metrics", type=Path, help="new software-stage timing JSON; never sensor latency")
+    parser.add_argument("--challenge", type=Path, help="body-relative Motion Studio challenge JSON")
+    parser.add_argument("--review-output", type=Path, help="new per-cue motion review JSON; requires --challenge")
     try:
         args = parser.parse_args(argv)
         if args.headless and args.sound: parser.error("--sound requires a display; remove --headless or --sound")
-        outputs = [p.resolve() for p in (args.record, args.record_rgbd, args.metrics) if p is not None]
+        outputs = [p.resolve() for p in (args.record, args.record_rgbd, args.metrics, args.review_output) if p is not None]
         if len(outputs) != len(set(outputs)): parser.error("Output paths must differ")
+        if args.review_output and not args.challenge: parser.error("--review-output requires --challenge")
+        if args.challenge and args.challenge.resolve() in outputs: parser.error("Challenge input and output paths must differ")
         if args.frames is not None and args.frames <= 0: parser.error("--frames must be positive")
         if args.source in ("replay", "rgbd-replay") and args.input is None: parser.error("--input required for replay")
         if args.source in ("camera", "demo") and args.input is not None: parser.error("--input only applies to replay")
@@ -42,9 +47,14 @@ def main(argv=None) -> int:
         return int(exc.code)
     metrics = None
     summary = None
+    simulation = None
+    source_metadata = {}
     metadata = {"source": args.source, "status": "partial", "evidence": "unverified"}
     code = 0
     try:
+        if args.review_output is not None and args.review_output.exists():
+            raise FileExistsError(f"Review output already exists: {args.review_output}")
+        challenge = ChallengeRecipe.load(args.challenge) if args.challenge else None
         if args.metrics is not None:
             if args.metrics.exists(): raise FileExistsError(f"Metrics output already exists: {args.metrics}")
             metrics = StageMetrics()
@@ -62,6 +72,7 @@ def main(argv=None) -> int:
             else:
                 with redirect_stdout(sys.stderr):
                     source = setup.enter_context(CameraPoseSource(config, metrics=metrics))
+            simulation = BoxingSimulation(config, challenge=challenge)
             view = setup.enter_context(SceneView(config, args.source, layout=args.view, sound=args.sound)) if not args.headless else NullView()
             source_metadata = source.describe() if hasattr(source, "describe") else getattr(source, "metadata", {"source": args.source})
             metadata.update({"config": config.to_dict(), "source_metadata": source_metadata,
@@ -71,7 +82,7 @@ def main(argv=None) -> int:
             rgbd_recorder = setup.enter_context(RGBDRecorder(args.record_rgbd, config, source_metadata)) if args.record_rgbd else None
             # From here run_session owns resources, including every failure path.
             setup.pop_all()
-            summary = run_session(source, BoxingSimulation(config), view, recorder,
+            summary = run_session(source, simulation, view, recorder,
                 args.frames if args.frames is not None else (600 if args.headless and args.source in ("demo", "camera") else None),
                 rgbd_recorder=rgbd_recorder, realtime=not args.headless and args.source != "camera", metrics=metrics)
         metadata.update(status="ok", summary=asdict(summary))
@@ -83,6 +94,17 @@ def main(argv=None) -> int:
         code = 1
         metadata["error"] = str(exc)
     finally:
+        if args.review_output is not None and simulation is not None and simulation.challenge is not None:
+            try:
+                report = simulation.challenge.report(source_metadata)
+                report.update(termination=summary.termination if summary else "error",
+                              execution_status="ok" if code == 0 else "partial")
+                if args.input is not None: report["input_sha256"] = file_sha256(args.input/"frames.jsonl" if args.source == "rgbd-replay" else args.input)
+                if "error" in metadata: report["error"] = metadata["error"]
+                write_json_exclusive(args.review_output, report)
+            except (OSError, ValueError, RuntimeError) as exc:
+                print(f"DepthStrike review: {exc}", file=sys.stderr)
+                if code == 0: code = 1
         if metrics is not None:
             try:
                 metrics.write_exclusive(args.metrics, metadata)

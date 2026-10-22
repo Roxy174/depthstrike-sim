@@ -81,8 +81,12 @@ class PunchTracker:
 
 
 class BoxingSimulation:
-    def __init__(self, config: AppConfig):
+    def __init__(self, config: AppConfig, *, challenge=None):
         self.config = config
+        self.challenge = None
+        if challenge is not None:
+            from .challenge_round import ChallengeRound
+            self.challenge = ChallengeRound(challenge, config)
         self.tracker = SkeletonTracker(config)
         self.punches = {hand: PunchTracker(config) for hand in ("left", "right")}
         self.calibration = GuidedCalibration(config) if config.interaction_mode == "guided" else None
@@ -101,6 +105,8 @@ class BoxingSimulation:
         self._settled = set()
         self._guided_valid_previous = False
         self._practice_flashes = {}
+        if self.challenge is not None:
+            self.challenge.reset()
         if self.calibration is not None:
             self.calibration.reset()
         self.invalidate_tracking()
@@ -113,6 +119,8 @@ class BoxingSimulation:
         self._guided_valid_previous = False
         if self.calibration is not None:
             self.calibration.invalidate()
+        if self.challenge is not None:
+            self.challenge.invalidate()
 
     def set_paused(self, paused: bool):
         if paused != self.paused:
@@ -231,6 +239,11 @@ class BoxingSimulation:
                                          filtered.joints.get(f"{hand}_shoulder"), **options)
         practice = guidance.stage.startswith("PRACTICE")
         events = []
+        if running and self.challenge is not None:
+            events = self.challenge.update(filtered, fists, states, self._elapsed, valid, profile)
+            self.score, self.hits = self.challenge.score, self.challenge.hits
+            status = "FINISHED" if self.challenge.complete else ("RUNNING" if valid else "TRACKING LOST")
+            return self._guided_state(filtered, fists, events, status, states, guidance)
         if valid and self._centers and (running or practice):
             active = (0 if guidance.stage == "PRACTICE_LEFT" else 1) if practice else self._active
             hand = ("left", "right")[active]
@@ -262,12 +275,16 @@ class BoxingSimulation:
                                self._practice_flashes.get(n, -1) > frame.timestamp_s)
                         for n, (hand, center) in enumerate(zip(("left", "right"), self._centers)))
         phases = {h: s.phase for h, s in states.items()}
+        challenge_display = None
+        if self.challenge is not None and guidance.stage == "RUNNING":
+            targets = self.challenge.visible_targets()
+            challenge_display = self.challenge.display()
         diagnostics = {h: s.reason for h, s in states.items()}
         feedback_status = "RUNNING" if status == "CALIBRATING" and guidance.stage.startswith("PRACTICE") else status
         feedback = build_feedback(fists, targets, phases, feedback_status, self.config, diagnostics)
         return SceneState(frame, targets, self.score, self.hits,
-                          max(0., self.config.round_duration_s - self._elapsed), events, status,
-                          phases, guidance, fists, feedback, diagnostics)
+                          max(0., (self.challenge.recipe.duration_s if challenge_display else self.config.round_duration_s) - self._elapsed), events, status,
+                          phases, guidance, fists, feedback, diagnostics, challenge_display)
 
     def _state(self, frame, events, status, phases):
         targets = tuple(Target(n, hand, center.copy(), self.config.target_radius_m,

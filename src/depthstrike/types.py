@@ -124,6 +124,7 @@ class SceneState:
     fists: dict[str, Joint3D] = field(default_factory=dict)
     feedback: dict[str, HandFeedback] = field(default_factory=dict)
     diagnostics: dict[str, str] = field(default_factory=dict)
+    challenge: dict | None = None
 
 
 class FrameTimeout(TimeoutError):
