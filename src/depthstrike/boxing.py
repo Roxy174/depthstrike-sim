@@ -20,6 +20,8 @@ class PunchState:
     position: np.ndarray | None
     can_hit: bool
     reason: str = "return_guard"
+    eligible_from_s: float | None = None
+    eligible_until_s: float | None = None
 
 
 class PunchTracker:
@@ -53,6 +55,7 @@ class PunchTracker:
             previous = None
         can_hit = False
         reason = "return_guard"
+        eligible_from = eligible_until = None
         if extension <= guard_threshold:
             self.phase = "READY"
             self._guard_extension = extension
@@ -68,7 +71,16 @@ class PunchTracker:
                     self._attack_start = timestamp_s
                     can_hit = True
                     reason = "attacking"
+                    threshold = max(attack_threshold, self._guard_extension + travel_threshold)
+                    fraction = float(np.clip((threshold-previous[2])/(extension-previous[2]), 0, 1))
+                    eligible_from = previous[0] + fraction*dt
+                    eligible_until = timestamp_s
             elif self.phase == "ATTACKING":
+                # A sample may straddle the timeout: preserve only its valid prefix.
+                if speed > 0:
+                    until = min(timestamp_s, self._attack_start + config.max_attack_duration_s)
+                    if until > previous[0]:
+                        eligible_from, eligible_until = previous[0], until
                 if speed > 0 and timestamp_s-self._attack_start <= config.max_attack_duration_s:
                     can_hit = True
                     reason = "attacking"
@@ -77,7 +89,8 @@ class PunchTracker:
         self._previous = (timestamp_s, position.copy(), extension)
         return PunchState(self.phase, self.attack_id,
                           previous[1] if previous is not None and not broken else None,
-                          position.copy(), can_hit and not broken, reason)
+                          position.copy(), can_hit and not broken, reason,
+                          eligible_from, eligible_until)
 
 
 class BoxingSimulation:
@@ -224,7 +237,7 @@ class BoxingSimulation:
         if running and not was_running:
             for tracker in self.punches.values():
                 tracker.reset()
-        if self._elapsed + 1e-9 >= self.config.round_duration_s:
+        if self.challenge is None and self._elapsed + 1e-9 >= self.config.round_duration_s:
             self._elapsed = self.config.round_duration_s
             self.invalidate_tracking()
             return self._guided_state(filtered, fists, (), "FINISHED", {}, guidance)

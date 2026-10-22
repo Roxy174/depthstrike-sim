@@ -27,7 +27,7 @@ def create_demo(directory):
     write_json_exclusive(directory/"challenge.json", recipe.to_dict())
     probe = BoxingSimulation(config)
     metadata = {"source": "synthetic challenge player", "evidence": "synthetic", "author_sha256": file_sha256(author),
-                "perturbation": "0.22 m lateral wrist/elbow displacement on cues 2, 5 and 8; analytic demonstration only"}
+                "perturbation": "wrist/elbow displacement (0.22, 0, 0.04) m on cues 2, 5 and 8; analytic demonstration only"}
     with PoseReplaySource(author) as source, PoseRecorder(directory/"player.jsonl", config, metadata) as recorder:
         while (frame := source.read()) is not None:
             state = probe.step(frame)
@@ -39,7 +39,7 @@ def create_demo(directory):
                     for part in ("wrist", "elbow"):
                         name = f"{cue.hand}_{part}"
                         joint = joints[name]
-                        joints[name] = Joint3D(joint.position + (.22, 0, 0), joint.confidence)
+                        joints[name] = Joint3D(joint.position + (.22, 0, .04), joint.confidence)
                     frame = replace(frame, joints=joints)
             recorder.write(frame, ())
     return recipe

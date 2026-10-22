@@ -27,26 +27,28 @@
 
 ## Task 1: 数据与几何
 
-- [ ] 先写手算尺度映射、格式拒绝、局部线段修正和越界拒绝测试，运行 RED。
-- [ ] 实现 `ChallengeRecipe.from_dict/load/to_dict/map_targets`、独占 JSON、最近线段与局部修正，运行 GREEN。
+- [x] 先写手算尺度映射、格式拒绝、局部线段修正和越界拒绝测试，运行 RED。
+- [x] 实现 `ChallengeRecipe.from_dict/load/to_dict/map_targets`、独占 JSON、最近线段与局部修正，运行 GREEN。
 
 ## Task 2: 示范转关卡
 
-- [ ] 完成 guided 合成示范与中断用例；断言有效出拳顺序、归一化、来源标记，不依赖 events。
-- [ ] 实现 `author_recording(input_path)`，仅收录正式回合中完整收回的有效直拳，保留源文件哈希与参数。
+- [x] 完成 guided 合成示范与中断用例；断言有效出拳顺序、归一化、来源标记，不依赖 events。
+- [x] 实现 `author_recording(input_path)`，仅收录正式回合中完整收回的有效直拳，保留源文件哈希与参数。
 
 ## Task 3: 挑战回合与复盘
 
-- [ ] 测试顺序命中、空间偏差、无攻击／观测不足、时间窗、partial 和去重。
-- [ ] 实现 `ChallengeRound` 与条件委托，新增 CLI `--challenge` / `--review-output`；原功能不带参数时回归通过。
+- [x] 测试顺序命中、空间偏差、无攻击／观测不足、时间窗、partial 和去重。
+- [x] 实现 `ChallengeRound` 与条件委托，新增 CLI `--challenge` / `--review-output`；原功能不带参数时回归通过。
 
 ## Task 4: 本地入口与可视化
 
-- [ ] 实现 `python -m depthstrike.studio author|demo|review`，合成示例完成整条链路。
-- [ ] 复盘视图显示正面／侧面轨迹、目标、最近点和局部修正；逐靶选择与动画播放；测试投影与非覆盖图像导出。
-- [ ] 实际运行显示窗口、核对截图，完善启动说明。
+- [x] 实现 `python -m depthstrike.studio author|demo|review`，合成示例完成整条链路。
+- [x] 复盘视图显示正面／侧面轨迹、目标、最近点和局部修正；逐靶选择与动画播放；测试投影与非覆盖图像导出。
+- [x] 实际运行显示窗口、核对截图，完善启动说明。
 
 ## Task 5: 交付验证
 
-- [ ] 运行全套测试、依赖检查、全链路 CLI、实际显示和局部修正接触核验。
-- [ ] 记录本地试做结果与限制，保存本地提交；不推送。
+- [x] 运行全套测试、依赖检查、全链路 CLI、实际显示和局部修正接触核验。
+- [x] 记录本地试做结果与限制，保存本地提交；不推送。
+
+最终证据及独立审查处理见 `docs/MOTION_STUDIO_VERIFICATION.md`。交付保留于本地开发分支，按用户要求不合并、不推送。

@@ -64,3 +64,16 @@ def test_author_refuses_multiple_formal_rounds_in_one_recipe(tmp_path):
     record_demo(path, actions={450: ["reset"]})
     with pytest.raises(ValueError, match="reset|round"):
         author_recording(path)
+
+
+def test_authored_windows_are_playable_with_the_recording_round_duration(tmp_path):
+    from depthstrike.boxing import BoxingSimulation
+    from depthstrike.motion_authoring import author_recording
+    config = AppConfig(round_duration_s=1.8)
+    path = tmp_path/"short-round.jsonl"
+    with DemoPoseSource(config=config, total_frames=600) as source, PoseRecorder(path, config, source.describe()) as recorder:
+        while (frame := source.read()) is not None: recorder.write(frame, ())
+    recipe = author_recording(path)
+    assert len(recipe.cues) == 1
+    assert recipe.duration_s <= config.round_duration_s
+    assert BoxingSimulation(config, challenge=recipe).challenge is not None

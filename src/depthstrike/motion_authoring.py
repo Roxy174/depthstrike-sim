@@ -61,7 +61,7 @@ def author_recording(input_path):
     cues = []
     for n, stroke in enumerate(completed):
         at = stroke["at_s"]
-        start, end = max(0., at-.4), at+.45
+        start, end = max(0., at-.4), min(config.round_duration_s, at+.45)
         if n: start = max(start, (completed[n-1]["at_s"]+at)/2)
         if n+1 < len(completed): end = min(end, (at+completed[n+1]["at_s"])/2)
         hand = stroke["hand"]

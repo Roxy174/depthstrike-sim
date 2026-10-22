@@ -4,6 +4,7 @@ from pathlib import Path
 import subprocess
 import sys
 
+import numpy as np
 import pytest
 
 from test_motion_authoring import record_demo
@@ -61,6 +62,13 @@ def test_studio_demo_has_hits_misses_and_verified_local_corrections(tmp_path, ca
     assert outcomes.count("hit") == 6 and outcomes.count("miss") == 3
     corrections = [row["counterfactual"] for row in report["trials"] if row["outcome"] == "miss"]
     assert all(c and c["verified_contact"] for c in corrections)
+    for row in report["trials"]:
+        if row["counterfactual"]:
+            hand = row["hand"]
+            shoulder = np.array(report["player_calibration"]["reference_shoulders_m"][hand])
+            reach = report["player_calibration"]["comfortable_extensions_m"][hand]
+            assert all(np.linalg.norm(np.array(p)-shoulder) <= reach+1e-9
+                       for p in row["counterfactual"]["segment_m"])
     assert report["evidence"] == "synthetic"
     assert main(["demo", "--output", str(directory), "--headless"]) != 0
     assert json.loads((directory/"review.json").read_text(encoding="utf-8")) == report

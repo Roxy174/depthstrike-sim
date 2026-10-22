@@ -21,7 +21,7 @@ def analyze_segment(start, end, target, hand_radius, shoulder, comfortable_reach
     translation = (center-closest) / distance * (gap + .001)
     shifted = (start + translation, end + translation)
     if not all(min_depth + hand_radius <= p[2] <= max_depth-hand_radius
-               and np.linalg.norm(p-shoulder) <= comfortable_reach + hand_radius for p in shifted):
+               and np.linalg.norm(p-shoulder) <= comfortable_reach + 1e-9 for p in shifted):
         return result
     if segment_sphere_intersection(*shifted, center, radius) is not None:
         result["counterfactual"] = {"scope": "local_geometry_only", "delta_m": translation.tolist(),

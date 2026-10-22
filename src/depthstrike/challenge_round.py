@@ -79,12 +79,17 @@ class ChallengeRound:
             point = fists[cue.hand].position
             state = states[cue.hand]
             key = (cue.hand, state.attack_id)
-            eligible = state.can_hit and key not in self._settled
             if connected and self.elapsed > previous[1]:
                 t0, p0 = previous[1], previous[2][cue.hand]
+                span = self.elapsed-t0
+                source_span = frame.timestamp_s-previous[0]
+                eligible_lo = eligible_hi = None
+                if (key not in self._settled and state.eligible_from_s is not None
+                        and state.eligible_until_s is not None):
+                    eligible_lo = max(t0, t0+span*(state.eligible_from_s-previous[0])/source_span)
+                    eligible_hi = min(self.elapsed, t0+span*(state.eligible_until_s-previous[0])/source_span)
                 lo, hi = max(t0, cue.start_s), min(self.elapsed, np.nextafter(cue.end_s, cue.start_s))
                 if hi > lo:
-                    span = self.elapsed-t0
                     a = p0 + (point-p0) * ((lo-t0)/span)
                     b = p0 + (point-p0) * ((hi-t0)/span)
                     if not row["trajectory"]: self._append(row, lo, a)
@@ -94,11 +99,22 @@ class ChallengeRound:
                         profile.reference_shoulders[cue.hand], profile.comfortable_extensions[cue.hand],
                         self.config.min_depth_m, self.config.max_depth_m)
                     analysis["closest_time_s"] = float(lo+analysis["fraction"]*(hi-lo))
-                    for field in ("best_any", "best_eligible") if eligible else ("best_any",):
-                        if row[field] is None or analysis["surface_gap_m"] < row[field]["surface_gap_m"]:
-                            row[field] = analysis
-                    row["eligible_segments"] += int(eligible)
-                if eligible and row["hit_time_s"] is None:
+                    if row["best_any"] is None or analysis["surface_gap_m"] < row["best_any"]["surface_gap_m"]:
+                        row["best_any"] = analysis
+                    if eligible_lo is not None:
+                        e0, e1 = max(lo, eligible_lo), min(hi, eligible_hi)
+                        if e1 > e0:
+                            ea = p0 + (point-p0)*((e0-t0)/span)
+                            eb = p0 + (point-p0)*((e1-t0)/span)
+                            eligible_analysis = analyze_segment(ea, eb, target, self.config.hand_radius_m,
+                                profile.reference_shoulders[cue.hand], profile.comfortable_extensions[cue.hand],
+                                self.config.min_depth_m, self.config.max_depth_m)
+                            eligible_analysis["closest_time_s"] = float(e0+eligible_analysis["fraction"]*(e1-e0))
+                            if (row["best_eligible"] is None or eligible_analysis["surface_gap_m"]
+                                    < row["best_eligible"]["surface_gap_m"]):
+                                row["best_eligible"] = eligible_analysis
+                            row["eligible_segments"] += 1
+                if eligible_lo is not None and row["hit_time_s"] is None:
                     radius = self.config.hand_radius_m+target.radius
                     # History is continuous even while the target is inactive;
                     # activating an already-overlapping target cannot create entry.
@@ -106,7 +122,8 @@ class ChallengeRound:
                         fraction = segment_sphere_intersection(p0, point, target.center, radius)
                         if fraction is not None:
                             hit_t = t0+fraction*(self.elapsed-t0)
-                            if cue.start_s <= hit_t < cue.end_s:
+                            if (cue.start_s <= hit_t < cue.end_s
+                                    and eligible_lo-1e-9 <= hit_t <= eligible_hi+1e-9):
                                 self._settled.add(key)
                                 row["hit_time_s"] = float(hit_t)
                                 row["attack_id"] = state.attack_id
