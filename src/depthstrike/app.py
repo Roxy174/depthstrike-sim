@@ -60,7 +60,7 @@ def run_session(source, simulation, view, recorder=None, max_frames=None, *,
                     simulation.invalidate_tracking()
                     if not pending or pending[-1] != "tracking_lost": pending.append("tracking_lost")
                     state = replace(state, skeleton=None, events=(), status="WAITING FOR CAMERA", phases={},
-                                    fists={}, feedback={}, diagnostics={})
+                                    fists={}, feedback={}, diagnostics={}, display_joints={})
                     with span("render"):
                         view.render(state, None)
                     if clock()-last_success >= simulation.config.stream_timeout_s:
@@ -91,6 +91,10 @@ def run_session(source, simulation, view, recorder=None, max_frames=None, *,
                 replay_actions = list(getattr(source, "actions", ()))
                 apply(replay_actions)
                 pending.extend(replay_actions)
+                rgbd = getattr(source, "last_rgbd", None)
+                if simulation.config.spatial_layout and rgbd is not None:
+                    from .spatial import DepthWorkspace
+                    simulation.set_workspace(DepthWorkspace(rgbd))
                 with span("simulation"):
                     state = simulation.step(frame)
                 rgbd = getattr(source, "last_rgbd", None)

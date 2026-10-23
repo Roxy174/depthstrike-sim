@@ -27,6 +27,8 @@ GUIDANCE = {
     "practice_right": "Practice: strike the orange ball with your right fist",
     "countdown": "Stay in guard; the round starts shortly",
     "running": "Alternate straight punches towards the camera",
+    "workspace_blocked": "Target path blocked: adjust setup and press R",
+    "workspace_unknown": "Target path has unknown depth: adjust view and press R",
 }
 REASONS = {"depth_gap": "Depth not reached", "off_axis": "Aim towards the ball",
            "low_speed": "Forward speed too low", "insufficient_travel": "Extend further",
@@ -95,6 +97,9 @@ def render_hud(state, rgbd_frame, config, mode="demo", trails=None):
         for name, point in points.items():
             if point is not None:
                 cv2.circle(image, point, 4, _bgr("left" if name.startswith("left") else "right"), -1, cv2.LINE_AA)
+        for name, joint in state.display_joints.items():
+            p = _pixel(joint.position, intrinsics)
+            if p is not None: cv2.circle(image, p, 8, (160, 160, 160), 1, cv2.LINE_AA)
         for hand, joint in state.fists.items():
             if joint.position is None: continue
             p = _pixel(joint.position, intrinsics)
@@ -109,6 +114,7 @@ def render_hud(state, rgbd_frame, config, mode="demo", trails=None):
             cv2.circle(image, p, r, _bgr(hand), 2, cv2.LINE_AA)
             cv2.circle(image, p, 4, _bgr(hand), -1, cv2.LINE_AA)
     for target in state.targets:
+        before_target = image.copy() if config.depth_occlusion and rgbd_frame is not None else None
         p = _pixel(target.center, intrinsics)
         if p is None: continue
         radius = max(3, min(200, round(intrinsics.fx * target.radius / target.center[2])))
@@ -119,6 +125,12 @@ def render_hud(state, rgbd_frame, config, mode="demo", trails=None):
         cv2.circle(image, p, radius, color, 3 if target.active else 1, cv2.LINE_AA)
         cv2.ellipse(image, p, (radius, max(2, radius//3)), 0, 0, 360, color, 1, cv2.LINE_AA)
         cv2.circle(image, (p[0]-radius//3, p[1]-radius//3), max(2, radius//7), (255, 255, 255), -1, cv2.LINE_AA)
+        if before_target is not None:
+            from .spatial import target_visibility_mask
+            visible = target_visibility_mask(rgbd_frame, target.center, target.radius)
+            image[~visible] = before_target[~visible]
+        if target.preview:
+            cv2.putText(image, "PREVIEW", (p[0]-30, p[1]-radius-8), cv2.FONT_HERSHEY_SIMPLEX, .35, color, 1)
     scale = min(700 / image.shape[1], 500 / image.shape[0])
     w, h = round(image.shape[1] * scale), round(image.shape[0] * scale)
     x, y = 20 + (700-w)//2, 98 + (500-h)//2
@@ -141,11 +153,17 @@ def render_hud(state, rgbd_frame, config, mode="demo", trails=None):
     text("Space  pause", (744, 557), .44, muted)
     text("R  restart setup", (744, 579), .44, muted)
     text("Q / Esc  exit", (744, 601), .44, muted)
+    if config.partial_tracking:
+        observed = sum(j.is_observed for j in state.skeleton.joints.values()) if state.skeleton else 0
+        text(f"{observed} observed / {len(state.display_joints)} predicted", (24, 611), .42, muted)
     guidance = state.guidance
     if state.status == "WAITING FOR CAMERA": hint = "Waiting for paired RGB-D frames; interaction is suspended"
     elif state.status == "PAUSED": hint = "Paused. Press Space to resume."
     elif state.status == "FINISHED": hint = "Round complete. Press R for another setup."
     else: hint = GUIDANCE.get(guidance.message_code, guidance.message_code) if guidance else "Alternate straight punches towards the camera"
+    if config.partial_tracking and guidance and guidance.message_code == "missing_body":
+        hand = "left" if guidance.stage.endswith("LEFT") else ("right" if guidance.stage.endswith("RIGHT") else "both")
+        hint = f"Keep {hand} hand(s) and shoulder(s) observable"
     if state.challenge and state.status not in ("PAUSED", "WAITING FOR CAMERA", "TRACKING LOST"):
         c = state.challenge
         hint = f"Cue {c['cue_index']}/{c['total']}: {c['hand'].title()} hand. "

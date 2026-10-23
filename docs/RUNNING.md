@@ -4,6 +4,14 @@ Windows PowerShell，Python 3.12。命令从仓库根目录运行，不需要激
 
 本地 `0.3.0.dev0` 的动作生成关卡与三维复盘入口见 [Motion Studio](MOTION_STUDIO.md)。下文保留基础击球场景的安装与运行方式。
 
+新增的局部追踪、掩膜深度融合、One Euro/Kalman、目标预览及深度遮挡见 [扩展说明](ADAPTIVE.md)。无需相机体验：
+
+```powershell
+.venv\Scripts\python.exe -m depthstrike --source demo --config configs/adaptive.json --view dual
+```
+
+以下完整双侧观测要求适用于默认配置；`configs/adaptive.json` 的逐侧校准与局部交互行为以扩展说明为准。
+
 ## 1. 安装
 
 ```powershell

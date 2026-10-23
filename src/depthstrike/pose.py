@@ -9,7 +9,9 @@ from .types import DepthStrikeError, FrameTimeout, Landmark, RGBDFrame
 
 JOINT_INDICES = {"nose": 0, "left_shoulder": 11, "right_shoulder": 12,
                  "left_elbow": 13, "right_elbow": 14, "left_wrist": 15,
-                 "right_wrist": 16, "left_hip": 23, "right_hip": 24}
+                 "right_wrist": 16, "left_pinky": 17, "right_pinky": 18,
+                 "left_index": 19, "right_index": 20, "left_thumb": 21, "right_thumb": 22,
+                 "left_hip": 23, "right_hip": 24}
 
 
 def video_timestamp_ms(timestamp_s, previous_ms):
@@ -59,11 +61,13 @@ class PoseEstimator:
             raise DepthStrikeError(f"MediaPipe/model initialization failed: {exc}. Install the pinned camera dependencies and verify the model.") from exc
         self._last_ms = -1
         self._closed = False
+        self.last_mask = None
 
     def detect(self, frame: RGBDFrame) -> dict[str, Landmark]:
         timestamp = video_timestamp_ms(frame.timestamp_s, self._last_ms)
         image = self.mp.Image(image_format=self.mp.ImageFormat.SRGB, data=np.ascontiguousarray(frame.color_rgb))
         result = self.detector.detect_for_video(image, timestamp)
+        self.last_mask = result.segmentation_masks[0].numpy_view().copy() if result.segmentation_masks else None
         self._last_ms = timestamp
         return landmarks_from_result(result, frame.intrinsics.width, frame.intrinsics.height)
 

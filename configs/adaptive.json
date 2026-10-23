@@ -1,0 +1,9 @@
+{
+  "fusion_mode": "masked",
+  "fist_mode": "hand",
+  "filter_mode": "one_euro",
+  "partial_tracking": true,
+  "preview_targets": true,
+  "depth_occlusion": true,
+  "spatial_layout": true
+}

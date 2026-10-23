@@ -41,10 +41,28 @@ class AppConfig:
     stream_timeout_s: float = 5.0
     model_path: str = "models/pose_landmarker_lite.task"
     legacy_sdk_distortion_model: str = "unknown"
+    fusion_mode: str = "conservative"
+    fist_mode: str = "forearm"
+    filter_mode: str = "exponential"
+    partial_tracking: bool = False
+    preview_targets: bool = False
+    depth_occlusion: bool = False
+    spatial_layout: bool = False
+    prediction_horizon_s: float = .12
+    one_euro_min_cutoff: float = 1.5
+    one_euro_beta: float = 1.0
 
     def __post_init__(self):
         for item in fields(self):
             value = getattr(self, item.name)
+            choices = {"fusion_mode": ("conservative", "masked"), "fist_mode": ("forearm", "hand"),
+                       "filter_mode": ("exponential", "one_euro", "kalman")}
+            if item.name in choices:
+                if value not in choices[item.name]: raise ValueError(f"Unsupported {item.name}")
+                continue
+            if item.name in ("partial_tracking", "preview_targets", "depth_occlusion", "spatial_layout"):
+                if type(value) is not bool: raise ValueError(f"{item.name} must be boolean")
+                continue
             if item.name == "interaction_mode":
                 if value not in ("guided", "legacy"):
                     raise ValueError("interaction_mode must be guided or legacy")

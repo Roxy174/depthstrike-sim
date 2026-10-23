@@ -8,17 +8,20 @@ from urllib.request import urlopen
 MODEL_URL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task"
 
 
-def download_model(destination: Path, *, opener=urlopen) -> dict:
+def download_model(destination: Path, *, variant="lite", opener=urlopen) -> dict:
+    if variant not in ("lite", "full", "heavy"):
+        raise ValueError("Unsupported pose model variant")
+    url = f"https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_{variant}/float16/1/pose_landmarker_{variant}.task"
     destination = Path(destination)
     sidecar = destination.with_suffix(".task.json")
     for output in (destination, sidecar):
         if output.exists():
             raise FileExistsError(f"Refusing to overwrite {output}; verify or rename it first")
-    with opener(MODEL_URL, timeout=60) as response:
+    with opener(url, timeout=60) as response:
         data = response.read(50*1024*1024+1)
     if not data or len(data) > 50*1024*1024:
         raise ValueError("Empty or oversized model response")
-    metadata = {"url": MODEL_URL, "model": "Pose Landmarker Lite", "version": 1,
+    metadata = {"url": url, "model": f"Pose Landmarker {variant.title()}", "variant": variant, "version": 1,
                 "sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)}
     destination.parent.mkdir(parents=True, exist_ok=True)
     # Recheck atomically through exclusive creation, including a sidecar that
@@ -32,10 +35,12 @@ def download_model(destination: Path, *, opener=urlopen) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, default=Path("models/pose_landmarker_lite.task"))
+    parser.add_argument("--variant", choices=("lite", "full", "heavy"), default="lite")
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     try:
-        print(json.dumps(download_model(args.output), indent=2))
+        destination = args.output or Path(f"models/pose_landmarker_{args.variant}.task")
+        print(json.dumps(download_model(destination, variant=args.variant), indent=2))
     except (OSError, ValueError) as exc:
         parser.exit(1, f"Model download failed: {exc}\n")
 

@@ -32,13 +32,19 @@ class GuidanceState:
 
 def valid_body(frame: SkeletonFrame, fists: dict[str, Joint3D], config: AppConfig) -> bool:
     joints = [frame.joints.get(name) for name in REQUIRED_JOINTS] + [fists.get(h) for h in HANDS]
-    return all(j is not None and j.position is not None and j.confidence >= config.confidence_threshold
+    return all(j is not None and j.is_observed and j.confidence >= config.confidence_threshold
                for j in joints)
+
+
+def valid_hand(frame, fists, hand, config):
+    joints = (frame.joints.get(f"{hand}_shoulder"), fists.get(hand))
+    return all(j is not None and j.is_observed and j.confidence >= config.confidence_threshold for j in joints)
 
 
 class GuidedCalibration:
     def __init__(self, config: AppConfig):
         self.config = config
+        self.workspace = None
         self.reset()
 
     def reset(self):
@@ -95,6 +101,13 @@ class GuidedCalibration:
             if segment_sphere_intersection(self._neutral_fists[hand], comfortable_fist, center,
                                            c.hand_radius_m + c.target_radius_m) is None:
                 return None, "target_unreachable"
+            if c.spatial_layout and self.workspace is not None:
+                direction = center-self._neutral_fists[hand]
+                length = np.linalg.norm(direction)
+                # Exclude the initial occupied fist volume before the sampled sweep.
+                start = self._neutral_fists[hand]+direction*min(.5, (2*c.hand_radius_m+.02)/length)
+                status = self.workspace.path_status(start, center, max(c.hand_radius_m, c.target_radius_m))
+                if status != "clear": return None, f"workspace_{status}"
             guards[hand] = self._neutral[hand] + .04
             attacks[hand] = guards[hand] + .5 * (reach - guards[hand])
             travel[hand] = min(c.punch_min_travel_m, .25 * (reach - guards[hand]))
@@ -116,15 +129,20 @@ class GuidedCalibration:
         if broken:
             self.invalidate()
         self._last_t = t
-        if not valid_body(frame, fists, c):
+        hands = HANDS
+        if c.partial_tracking and self.stage.startswith(("REACH", "RETURN", "PRACTICE")):
+            hands = ("left" if self.stage.endswith("LEFT") else "right",)
+        available = {h: valid_hand(frame, fists, h, c) for h in HANDS}
+        valid = (any(available.values()) if self.stage == "RUNNING" else all(available[h] for h in hands)) if c.partial_tracking else valid_body(frame, fists, c)
+        if not valid:
             self.invalidate()
             return self._state("missing_body")
         if dt is not None and dt <= 0:
             return self._state("timestamp_invalid")
-        shoulders = {h: frame.joints[f"{h}_shoulder"].position for h in HANDS}
-        extensions = {h: float(shoulders[h][2] - fists[h].position[2]) for h in HANDS}
+        shoulders = {h: frame.joints[f"{h}_shoulder"].position for h in HANDS if available[h]}
+        extensions = {h: float(shoulders[h][2] - fists[h].position[2]) for h in shoulders}
         thresholds = self.profile.guard_thresholds if self.profile else {h: c.guard_extension_m for h in HANDS}
-        guard = all(extensions[h] <= thresholds[h] for h in HANDS)
+        guard = all(extensions.get(h, float("inf")) <= thresholds[h] for h in hands)
         if self.stage == "RUNNING":
             return self._state("running", 1.)
         if self.stage == "COUNTDOWN":
@@ -143,16 +161,16 @@ class GuidedCalibration:
             if not guard:
                 self._samples = []
                 return self._state("return_guard")
-            points = np.stack([frame.joints[n].position for n in REQUIRED_JOINTS] + [fists[h].position for h in HANDS])
+            points = np.stack([shoulders[h] for h in HANDS] + [fists[h].position for h in HANDS])
             done, progress = self._hold(t, points, c.calibration_duration_s)
             if not done:
                 return self._state("hold_guard", progress)
             mean = np.mean([p for _, p in self._samples], axis=0)
-            self._reference = {h: mean[n * 3].copy() for n, h in enumerate(HANDS)}
-            self._neutral_fists = {h: mean[6+n].copy() for n, h in enumerate(HANDS)}
+            self._reference = {h: mean[n].copy() for n, h in enumerate(HANDS)}
+            self._neutral_fists = {h: mean[2+n].copy() for n, h in enumerate(HANDS)}
             self._neutral = {h: float(self._reference[h][2] - self._neutral_fists[h][2]) for h in HANDS}
             return self._transition("REACH_LEFT")
-        if any(np.linalg.norm(shoulders[h] - self._reference[h]) > c.calibration_motion_m for h in HANDS):
+        if any(np.linalg.norm(shoulders[h] - self._reference[h]) > c.calibration_motion_m for h in shoulders):
             self._samples = []
             return self._state("restore_position")
         hand = "left" if self.stage.endswith("LEFT") else "right"
@@ -165,7 +183,7 @@ class GuidedCalibration:
                 self._samples = []
                 return self._state("adjust_distance")
             self._profile_error = None
-            points = np.stack([shoulders[h] for h in HANDS] + [p - shoulders[hand]])
+            points = np.stack([shoulders[h] for h in hands] + [p - shoulders[hand]])
             done, progress = self._hold(t, points, c.reach_hold_s)
             if not done:
                 return self._state("hold_reach", progress)
@@ -175,7 +193,7 @@ class GuidedCalibration:
         if not guard:
             self._samples = []
             return self._state("return_guard")
-        points = np.stack([fists[h].position for h in HANDS])
+        points = np.stack([fists[h].position for h in hands])
         done, progress = self._hold(t, points, c.return_guard_s)
         if not done:
             return self._state("hold_guard", progress)

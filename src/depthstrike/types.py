@@ -68,8 +68,16 @@ class Joint3D:
     position: np.ndarray | None
     confidence: float = 0.0
     invalid_reason: str | None = None
+    provenance: str = "observed"
+    depth_quality: float = 1.0
+    age_s: float = 0.0
 
     def __post_init__(self):
+        if self.provenance not in ("observed", "depth_patch", "hand_surface", "predicted"):
+            raise ValueError("Unknown joint provenance")
+        if (not np.isfinite((self.depth_quality, self.age_s)).all()
+                or not 0 <= self.depth_quality <= 1 or self.age_s < 0):
+            raise ValueError("Invalid joint quality or age")
         if not np.isfinite(self.confidence) or not 0 <= self.confidence <= 1:
             raise ValueError("Joint confidence must be in [0, 1]")
         if self.invalid_reason is not None and (
@@ -78,6 +86,10 @@ class Joint3D:
             raise ValueError("Invalid reason is only allowed on an invalid joint")
         if self.position is not None:
             object.__setattr__(self, "position", vector3(self.position))
+
+    @property
+    def is_observed(self):
+        return self.position is not None and self.provenance != "predicted"
 
 
 @dataclass(frozen=True)
@@ -108,6 +120,7 @@ class Target:
     radius: float
     active: bool
     flash: bool = False
+    preview: bool = False
 
 
 @dataclass(frozen=True)
@@ -125,6 +138,7 @@ class SceneState:
     feedback: dict[str, HandFeedback] = field(default_factory=dict)
     diagnostics: dict[str, str] = field(default_factory=dict)
     challenge: dict | None = None
+    display_joints: dict[str, Joint3D] = field(default_factory=dict)
 
 
 class FrameTimeout(TimeoutError):

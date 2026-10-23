@@ -17,6 +17,7 @@ class CameraPoseSource:
         self.capture = self.estimator = None
         self.last_rgbd = None
         self.last_landmarks = {}
+        self._previous_skeleton = None
         self.actions = []
         try:
             self.capture = capture if capture is not None else GeminiSource(config)
@@ -35,7 +36,10 @@ class CameraPoseSource:
         with self.metrics.measure("pose") if self.metrics else nullcontext():
             self.last_landmarks = self.estimator.detect(frame)
         with self.metrics.measure("fusion") if self.metrics else nullcontext():
-            return fuse_skeleton(frame, self.last_landmarks, self.config)
+            result = fuse_skeleton(frame, self.last_landmarks, self.config,
+                                   mask=getattr(self.estimator, "last_mask", None), previous=self._previous_skeleton)
+            self._previous_skeleton = result
+            return result
 
     def describe(self):
         metadata = self.capture.describe() if hasattr(self.capture, "describe") else {"source": "rgbd-replay"}

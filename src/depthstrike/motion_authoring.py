@@ -2,12 +2,14 @@
 import numpy as np
 
 from .boxing import BoxingSimulation
+from .calibration import valid_body
 from .motion_challenge import ChallengeRecipe, file_sha256
 from .recording import COORDINATES, PoseReplaySource
 
 
 def author_recording(input_path):
     completed, pending = [], {}
+    previous_sources = {}
     profile = None
     last_t = None
     discarded = count = 0
@@ -33,7 +35,13 @@ def author_recording(input_path):
                 discarded += len(pending)
                 pending.clear()
             state = simulation.step(frame)
-            if state.status != "RUNNING" or state.guidance.stage != "RUNNING":
+            sources = {h: j.provenance for h, j in state.fists.items()}
+            if previous_sources and sources != previous_sources:
+                discarded += len(pending)
+                pending.clear()
+            previous_sources = sources
+            if (state.status != "RUNNING" or state.guidance.stage != "RUNNING"
+                    or not valid_body(state.skeleton, state.fists, config)):
                 discarded += len(pending)
                 pending.clear()
                 continue

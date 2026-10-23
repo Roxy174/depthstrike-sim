@@ -16,7 +16,7 @@ from .boxing import PunchTracker
 from .calibration import valid_body
 from .config import AppConfig
 from .geometry import segment_sphere_intersection
-from .interaction import estimate_fist
+from .interaction import estimate_hand
 from .recording import COORDINATES, PoseReplaySource
 from .tracking import SkeletonTracker
 from .types import Intrinsics, SkeletonFrame, Target, vector3
@@ -203,6 +203,7 @@ def evaluate_frames(frames, manifest: EvaluationManifest, config: AppConfig) -> 
     predictions = {name: [] for name in METHODS}
     history = {}
     previous_points = {}
+    proxy_sources = {}
     previous_t = None
     settled = set()
     total_frames = evaluated_frames = invalid_frames = 0
@@ -217,6 +218,7 @@ def evaluate_frames(frames, manifest: EvaluationManifest, config: AppConfig) -> 
         for punch in punches.values(): punch.reset()
         history.clear()
         previous_points.clear()
+        proxy_sources.clear()
         previous_t = None
 
     for item in frames:
@@ -227,7 +229,9 @@ def evaluate_frames(frames, manifest: EvaluationManifest, config: AppConfig) -> 
         total_frames += 1
         input_hash.update(_canonical({"frame_id": frame.frame_id, "timestamp_s": frame.timestamp_s,
             "joints": {n: {"position": j.position.tolist() if j.position is not None else None,
-                            "confidence": j.confidence, "invalid_reason": j.invalid_reason} for n, j in frame.joints.items()},
+                            "confidence": j.confidence, "invalid_reason": j.invalid_reason,
+                            "provenance": j.provenance, "depth_quality": j.depth_quality, "age_s": j.age_s}
+                       for n, j in frame.joints.items()},
             "actions": list(actions)}))
         for action in actions:
             if action == "pause": paused = not paused
@@ -243,7 +247,11 @@ def evaluate_frames(frames, manifest: EvaluationManifest, config: AppConfig) -> 
                 any(previous_t <= w["end_s"] and w["start_s"] <= t for w in manifest.ignore_windows)):
             invalidate()
         filtered = tracker.update(frame)
-        fists = {h: estimate_fist(filtered.joints.get(f"{h}_elbow"), filtered.joints.get(f"{h}_wrist"), config) for h in punches}
+        fists = {h: estimate_hand(filtered.joints, h, config) for h in punches}
+        current_sources = {h: j.provenance for h, j in fists.items()}
+        if proxy_sources and current_sources != proxy_sources:
+            invalidate()
+        proxy_sources.update(current_sources)
         if not valid_body(filtered, fists, config) or any(not config.min_depth_m <= j.position[2] <= config.max_depth_m
                 for j in fists.values() if j.position is not None):
             invalid_frames += 1

@@ -104,7 +104,8 @@ class PoseRecorder(_Resource):
     def write(self, frame, events, actions=()):
         self.stream.write(_dump({"frame_id": frame.frame_id, "timestamp_s": frame.timestamp_s,
             "joints": {name: {"position": j.position.tolist() if j.position is not None else None,
-                               "confidence": j.confidence, "invalid_reason": j.invalid_reason}
+                               "confidence": j.confidence, "invalid_reason": j.invalid_reason,
+                               "provenance": j.provenance, "depth_quality": j.depth_quality, "age_s": j.age_s}
                        for name, j in frame.joints.items()},
             "events": [asdict(e) for e in events], "actions": list(actions)}))
 
@@ -123,7 +124,8 @@ class PoseReplaySource(_Reader):
         try:
             if not isinstance(row["joints"], dict) or len(row["joints"]) > 100:
                 raise ValueError("Invalid joint map")
-            joints = {name: Joint3D(j["position"], j["confidence"], j.get("invalid_reason"))
+            joints = {name: Joint3D(j["position"], j["confidence"], j.get("invalid_reason"),
+                                   j.get("provenance", "observed"), j.get("depth_quality", 1.), j.get("age_s", 0.))
                       for name, j in row["joints"].items()}
             self.recorded_events = tuple(HitEvent(**e) for e in row.get("events", []))
             return SkeletonFrame(row["frame_id"], row["timestamp_s"], joints)

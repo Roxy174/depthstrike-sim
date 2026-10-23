@@ -42,7 +42,7 @@ class PunchTracker:
         guard_threshold = config.guard_extension_m if guard_extension_m is None else guard_extension_m
         attack_threshold = config.attack_extension_m if attack_extension_m is None else attack_extension_m
         travel_threshold = config.punch_min_travel_m if min_travel_m is None else min_travel_m
-        if any(j is None or j.position is None or j.confidence < config.confidence_threshold for j in (wrist, shoulder)):
+        if any(j is None or not j.is_observed or j.confidence < config.confidence_threshold for j in (wrist, shoulder)):
             self.reset()
             return PunchState(self.phase, self.attack_id, None, None, False, "invalid_tracking")
         position = wrist.position
@@ -126,6 +126,7 @@ class BoxingSimulation:
 
     def invalidate_tracking(self):
         self.tracker.reset()
+        self._proxy_sources = {}
         for tracker in self.punches.values():
             tracker.reset()
         self._calibration = []
@@ -141,7 +142,12 @@ class BoxingSimulation:
             self._skip_time = True
             self.invalidate_tracking()
 
+    def set_workspace(self, workspace):
+        if self.calibration is not None:
+            self.calibration.workspace = workspace
+
     def _calibrate(self, frame):
+        """Legacy fixed target calibration."""
         names = [f"{hand}_{part}" for hand in ("left", "right") for part in ("shoulder", "elbow", "wrist")]
         joints = [frame.joints.get(name) for name in names]
         if any(j is None or j.position is None or j.confidence < self.config.confidence_threshold for j in joints):
@@ -213,17 +219,24 @@ class BoxingSimulation:
         if previous_t is not None and not 0 < dt <= self.config.max_track_gap_s + 1e-9:
             self.invalidate_tracking()
         filtered = self.tracker.update(frame)
-        fists = {h: estimate_fist(filtered.joints.get(f"{h}_elbow"),
-                                  filtered.joints.get(f"{h}_wrist"), self.config) for h in ("left", "right")}
-        valid = valid_body(filtered, fists, self.config)
+        from .interaction import estimate_hand
+        from .calibration import valid_hand
+        fists = {h: estimate_hand(filtered.joints, h, self.config) for h in ("left", "right")}
+        local = self.config.partial_tracking and self.challenge is None
+        hand_valid = {h: valid_hand(filtered, fists, h, self.config) for h in ("left", "right")}
+        active_hand = ("left", "right")[self._active]
+        valid = hand_valid[active_hand] if local else valid_body(filtered, fists, self.config)
         guidance = self.calibration.state
+        if local and guidance.stage.startswith("PRACTICE"):
+            active_hand = "left" if guidance.stage.endswith("LEFT") else "right"
+            valid = hand_valid[active_hand]
         if self.paused:
             return self._guided_state(filtered, fists, (), "PAUSED", {}, guidance)
         if self._elapsed >= self.config.round_duration_s:
             self.invalidate_tracking()
             return self._guided_state(filtered, fists, (), "FINISHED", {}, guidance)
         was_running = guidance.stage == "RUNNING"
-        if not valid:
+        if not valid and not local:
             self.invalidate_tracking()
         guidance = self.calibration.update(filtered, fists)
         if guidance.profile is not None and not self._centers:
@@ -244,11 +257,15 @@ class BoxingSimulation:
         profile = guidance.profile
         states = {}
         for hand, tracker in self.punches.items():
+            source = fists[hand].provenance
+            if hand in self._proxy_sources and self._proxy_sources[hand] != source:
+                tracker.reset()
+            self._proxy_sources[hand] = source
             options = {} if profile is None else dict(
                 guard_extension_m=profile.guard_thresholds[hand],
                 attack_extension_m=profile.attack_thresholds[hand],
                 min_travel_m=profile.travel_thresholds[hand])
-            states[hand] = tracker.update(frame.timestamp_s, fists[hand] if valid else None,
+            states[hand] = tracker.update(frame.timestamp_s, fists[hand] if (hand_valid[hand] if local else valid) else None,
                                          filtered.joints.get(f"{hand}_shoulder"), **options)
         practice = guidance.stage.startswith("PRACTICE")
         events = []
@@ -288,6 +305,15 @@ class BoxingSimulation:
                                self._practice_flashes.get(n, -1) > frame.timestamp_s)
                         for n, (hand, center) in enumerate(zip(("left", "right"), self._centers)))
         phases = {h: s.phase for h, s in states.items()}
+        if not targets and self.config.preview_targets:
+            preview = []
+            for n, hand in enumerate(("left", "right")):
+                shoulder = frame.joints.get(f"{hand}_shoulder")
+                if shoulder is not None and shoulder.is_observed:
+                    center = shoulder.position+np.array((0, self.config.target_height_m, -self.config.target_forward_m))
+                    if center[2] > self.config.target_radius_m:
+                        preview.append(Target(n, hand, center, self.config.target_radius_m, False, preview=True))
+            targets = tuple(preview)
         challenge_display = None
         if self.challenge is not None and guidance.stage == "RUNNING":
             targets = self.challenge.visible_targets()
@@ -297,7 +323,8 @@ class BoxingSimulation:
         feedback = build_feedback(fists, targets, phases, feedback_status, self.config, diagnostics)
         return SceneState(frame, targets, self.score, self.hits,
                           max(0., (self.challenge.recipe.duration_s if challenge_display else self.config.round_duration_s) - self._elapsed), events, status,
-                          phases, guidance, fists, feedback, diagnostics, challenge_display)
+                          phases, guidance, fists, feedback, diagnostics, challenge_display,
+                          dict(self.tracker.display_joints))
 
     def _state(self, frame, events, status, phases):
         targets = tuple(Target(n, hand, center.copy(), self.config.target_radius_m,

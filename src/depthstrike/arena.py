@@ -43,7 +43,7 @@ class ArenaRenderer:
             self._set_lines(ground, grid, (.75, .79, .83))
             self.vis.add_geometry(ground)
             self.vis.add_geometry(o3d.geometry.TriangleMesh.create_coordinate_frame(size=.2), reset_bounding_box=False)
-            for name in ("bones", "trail_left", "trail_right"):
+            for name in ("bones", "predicted", "trail_left", "trail_right"):
                 self.geometries[name] = o3d.geometry.LineSet()
                 self.vis.add_geometry(self.geometries[name], reset_bounding_box=False)
             for name in ("nose", "fist_left", "fist_right", "target_0", "target_1"):
@@ -107,6 +107,11 @@ class ArenaRenderer:
                 segments.append((wrist, proxies[hand]))
         self._set_lines(self.geometries["bones"], segments, (.27, .34, .42))
         self.vis.update_geometry(self.geometries["bones"])
+        estimated = {**points, **{n: j.position for n, j in state.display_joints.items()}}
+        predictions = [(estimated[a], estimated[b]) for a, b in BONES
+                       if a in estimated and b in estimated and (a in state.display_joints or b in state.display_joints)]
+        self._set_lines(self.geometries["predicted"], predictions, (.7, .7, .7))
+        self.vis.update_geometry(self.geometries["predicted"])
         self._update_sphere("nose", points.get("nose"), .075, (.64, .69, .74))
         broken = frame is None or self._last_t is not None and not 0 < frame.timestamp_s - self._last_t <= self.config.max_track_gap_s + 1e-9
         self._last_t = frame.timestamp_s if frame else None
