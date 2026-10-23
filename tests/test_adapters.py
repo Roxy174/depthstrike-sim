@@ -50,6 +50,15 @@ def test_mismatched_timestamps_and_invalid_scale_rejected():
         convert_frames(color, depth, 0, AppConfig())
 
 
+@pytest.mark.parametrize("color_t,depth_t", [(0., 0.), (0., 10.), (10., 0.)])
+def test_zero_device_timestamps_require_metadata_instead_of_false_sync(color_t, depth_t):
+    from depthstrike.capture import convert_frames
+    color = VideoFrame(np.zeros((3, 4, 3), np.uint8), timestamp=color_t)
+    depth = VideoFrame(np.ones((3, 4), np.uint16), "Y16", timestamp=depth_t)
+    with pytest.raises(DepthStrikeError, match="UVC metadata"):
+        convert_frames(color, depth, 0, AppConfig())
+
+
 def test_legacy_sdk_unknown_nonzero_distortion_requires_explicit_model():
     from depthstrike.capture import convert_frames
     color = VideoFrame(np.zeros((3, 4, 3), np.uint8))
@@ -61,6 +70,33 @@ def test_legacy_sdk_unknown_nonzero_distortion_requires_explicit_model():
     assert convert_frames(color, depth, 0, verified).intrinsics.distortion_model == "brown_conrady"
     depth.timestamp, depth.scale = 1000, 0
     with pytest.raises(ValueError, match="scale"):
+        convert_frames(color, depth, 0, AppConfig())
+
+
+@pytest.mark.parametrize("model", ["OBCameraDistortionModel.BROWN_CONRADY_K6", "OB_DISTORTION_BROWN_CONRADY_K6"])
+def test_gemini_k6_preserves_rational_coefficients_and_deprojects(model):
+    from depthstrike.capture import convert_frames
+    from depthstrike.fusion import deproject_pixel
+    pytest.importorskip("cv2")
+    color = VideoFrame(np.zeros((3, 4, 3), np.uint8))
+    depth = VideoFrame(np.full((3, 4), 2000, np.uint16), "Y16")
+    color.get_distortion = lambda: SimpleNamespace(model=model, k1=.1, k2=-.04,
+        p1=.002, p2=-.001, k3=.005, k4=.02, k5=-.01, k6=.003)
+    frame = convert_frames(color, depth, 0, AppConfig())
+    assert frame.intrinsics.distortion_model == "brown_conrady"
+    assert frame.intrinsics.distortion == (.1, -.04, .002, -.001, .005, .02, -.01, .003)
+    # Independent rational forward projection of (0.4, -0.2, 2) m.
+    assert deproject_pixel(3.203445710167945, .8987271449160275, 2., frame.intrinsics) == pytest.approx((.4, -.2, 2), abs=1e-8)
+
+
+@pytest.mark.parametrize("model", ["INVERSE_BROWN_CONRADY", "KANNALA_BRANDT4"])
+def test_accepting_k6_does_not_accept_other_distortion_models(model):
+    from depthstrike.capture import convert_frames
+    color = VideoFrame(np.zeros((3, 4, 3), np.uint8))
+    depth = VideoFrame(np.full((3, 4), 2000, np.uint16), "Y16")
+    color.get_distortion = lambda: SimpleNamespace(model=model, k1=.1, k2=0,
+        p1=0, p2=0, k3=0, k4=0, k5=0, k6=0)
+    with pytest.raises(ValueError, match="Unsupported SDK distortion"):
         convert_frames(color, depth, 0, AppConfig())
 
 

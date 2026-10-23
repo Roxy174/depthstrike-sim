@@ -40,7 +40,9 @@ def _intrinsics(profile, legacy_model="unknown") -> Intrinsics:
         raise ValueError("SDK does not expose distortion.model. Verify the device calibration model, then set legacy_sdk_distortion_model in config (e.g. brown_conrady); do not guess.")
     if model in {"NONE", "OB_DISTORTION_NONE"}:
         name = "none"
-    elif model in {"BROWN_CONRADY", "OB_DISTORTION_BROWN_CONRADY"}:
+    elif model in {"BROWN_CONRADY", "OB_DISTORTION_BROWN_CONRADY",
+                   "BROWN_CONRADY_K6", "OB_DISTORTION_BROWN_CONRADY_K6"}:
+        # K6 uses the same rational model, retaining all eight OpenCV coefficients.
         name = "brown_conrady"
     else:
         raise ValueError(f"Unsupported SDK distortion model {model}; calibration must be verified")
@@ -51,6 +53,8 @@ def convert_frames(color, depth, frame_id: int, config: AppConfig) -> RGBDFrame:
     color_t, depth_t = color.get_timestamp()/1000., depth.get_timestamp()/1000.
     if not np.isfinite((color_t, depth_t)).all() or abs(color_t-depth_t) > config.frame_sync_tolerance_s:
         raise FrameTimeout("Rejected RGB/depth pair with mismatched timestamps")
+    if color_t <= 0 or depth_t <= 0:
+        raise DepthStrikeError("Camera hardware timestamps are unavailable. On Windows, register Orbbec UVC metadata with the official setup script, then reconnect the camera; host arrival times are not capture synchronization.")
     scale = float(depth.get_depth_scale())
     if not np.isfinite(scale) or scale <= 0:
         raise ValueError("Depth scale must be finite and positive (SDK mm/unit)")

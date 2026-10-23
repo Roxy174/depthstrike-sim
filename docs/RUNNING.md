@@ -63,7 +63,15 @@ guided 演示的固定动作支持速度阈值不大于 2 m/s、平滑常数不�
 
 拳心为腕点沿前臂方向延长 0.06 m 的代理，不是解剖测量；深度来自可见表面。所有阈值仍需实机调整，不能据计分推断打击力量或专业动作质量。
 
-采集优先 RGB 640×480/30 fps，深度用设备默认流，经软件 D2C 对齐；拒绝尺寸、时间不匹配帧。支持无畸变和标准 Brown–Conrady；未知或非标准模型不按针孔近似。旧 SDK 缺标定模型字段时必须独立确认后再配置 `legacy_sdk_distortion_model`，不可改名绕过检查。
+采集优先 RGB 640×480/30 fps，深度用设备默认流，经软件 D2C 对齐；拒绝尺寸、时间不匹配帧。支持无畸变和标准 Brown–Conrady，包括 SDK 的 `BROWN_CONRADY_K6` 八系数有理模型；全部系数按 `(k1, k2, p1, p2, k3, k4, k5, k6)` 保留。未知或非标准模型不按针孔近似。旧 SDK 缺标定模型字段时必须独立确认后再配置 `legacy_sdk_distortion_model`，不可改名绕过检查。
+
+Windows 首次接入还需注册 UVC 帧元数据，否则设备时间戳可能全部为 0。经设备所有者同意后，在管理员 PowerShell 中运行 SDK 自带脚本，仅注册已连接的 Orbbec 设备：
+
+```powershell
+powershell.exe -NoProfile -File ".venv\Lib\site-packages\pyorbbecsdk\shared\obsensor_metadata_win10.ps1" -op install
+```
+
+随后重新插拔相机，重启采集并检查时间戳是否非零、递增且 RGB／深度差值合格。该操作修改 Windows 设备注册表，不是项目配置；不要为此永久放宽执行策略，不自动升级固件。程序拒绝零设备时间戳，不用主机到达时间代替采集同步。官方原因说明见 [Timestamp Usage Guide](https://github.com/orbbec/OrbbecSDK_v2/blob/main/docs/tutorial/timestamp.md)，本机检查见 [2026-10-23 实机记录](CAMERA_SMOKE_2026-10-23.md)。
 
 ## 4. 录制与回放
 
