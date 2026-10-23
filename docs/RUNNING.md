@@ -46,6 +46,23 @@ guided 演示的固定动作支持速度阈值不大于 2 m/s、平滑常数不�
 
 ## 3. Gemini 2
 
+### OpenCV 体验入口（沿用 LAB3）
+
+不依赖 UVC 设备时间戳注册，显式选择后才启用；不会在 SDK 失败时自动切换：
+
+```powershell
+.venv\Scripts\python.exe -m depthstrike --source opencv-camera
+.venv\Scripts\python.exe -m depthstrike --source opencv-camera --view dual
+```
+
+使用同一次 `grab()` 后的 BGR／毫米深度数据；验证尺寸和类型，转换为 RGB／米。画面标注 `OpenCV EXPERIENCE / host time / approximate geometry`，仍经过现有的人体置信度、深度有效性和完整上肢检查，不因体验模式降低阈值。
+
+这里使用主机单调时钟的读取完成时间，不能称作曝光时间、硬件同步或传感器到显示延迟。OpenCV 4.11 的 Gemini 2 后端返回型号默认内参，且没有暴露完整畸变参数，所以内部显式使用 `pinhole_approximation`；不是已验证无畸变模型。体验计分不作为三维精度或同步性能实验结果。记录与报告保留来源和这些限制，不自动录制；只有显式使用 `--record`／`--record-rgbd` 才保存相应人体数据。
+
+同样需要双肩、双肘、双腕同时有效，并不要求腿脚入镜。若空间不足导致这些关节无法入镜，应暂停真人击球测试，不关闭保护条件强行计分。合成演示与离线开发仍可继续。
+
+### SDK 严格入口
+
 显式下载官方模型，模型及同名 `.task.json` 来源说明任一已存在均拒绝覆盖，也不在启动时自动下载：
 
 ```powershell

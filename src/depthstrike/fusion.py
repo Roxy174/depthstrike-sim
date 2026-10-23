@@ -7,9 +7,9 @@ from .types import Intrinsics, Joint3D, Landmark, RGBDFrame, SkeletonFrame, vect
 
 def deproject_pixel(u: float, v: float, z: float, intrinsics: Intrinsics) -> np.ndarray:
     i = intrinsics
-    if i.distortion_model == "none":
+    if i.distortion_model in ("none", "pinhole_approximation"):
         if any(abs(x) > 1e-12 for x in i.distortion):
-            raise ValueError("Nonzero distortion declared with model 'none'")
+            raise ValueError("Nonzero distortion declared with a pinhole model")
         x, y = (u-i.cx)/i.fx, (v-i.cy)/i.fy
     elif i.distortion_model == "brown_conrady":
         if len(i.distortion) not in (4, 5, 8):

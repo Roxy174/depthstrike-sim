@@ -12,15 +12,25 @@ from .boxing import BoxingSimulation
 from .config import load_config
 from .metrics import StageMetrics
 from .motion_challenge import ChallengeRecipe, file_sha256, write_json_exclusive
+from .opencv_capture import OpenCVSource
 from .recording import PoseRecorder, PoseReplaySource, RGBDRecorder, RGBDReplaySource
 from .sources import CameraPoseSource, DemoPoseSource
 from .types import DepthStrikeError
 from .visualization import NullView, SceneView
 
 
+def _opencv_experience_origin(metadata):
+    seen = set()
+    while isinstance(metadata, dict) and id(metadata) not in seen:
+        if metadata.get("capture_backend") == "opencv_obsensor": return True
+        seen.add(id(metadata))
+        metadata = metadata.get("recording_metadata")
+    return False
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="DepthStrike: RGB-D skeleton-guided target boxing")
-    parser.add_argument("--source", choices=("demo", "camera", "replay", "rgbd-replay"), default="demo")
+    parser.add_argument("--source", choices=("demo", "camera", "opencv-camera", "replay", "rgbd-replay"), default="demo")
     parser.add_argument("--input", type=Path, help="pose JSONL file or RGB-D recording directory")
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--view", choices=("overlay", "dual"), default="overlay")
@@ -41,8 +51,8 @@ def main(argv=None) -> int:
         if args.challenge and args.challenge.resolve() in outputs: parser.error("Challenge input and output paths must differ")
         if args.frames is not None and args.frames <= 0: parser.error("--frames must be positive")
         if args.source in ("replay", "rgbd-replay") and args.input is None: parser.error("--input required for replay")
-        if args.source in ("camera", "demo") and args.input is not None: parser.error("--input only applies to replay")
-        if args.record_rgbd and args.source not in ("camera", "rgbd-replay"): parser.error("--record-rgbd requires camera or rgbd-replay")
+        if args.source in ("camera", "opencv-camera", "demo") and args.input is not None: parser.error("--input only applies to replay")
+        if args.record_rgbd and args.source not in ("camera", "opencv-camera", "rgbd-replay"): parser.error("--record-rgbd requires a camera or rgbd-replay")
     except SystemExit as exc:
         return int(exc.code)
     metrics = None
@@ -69,12 +79,19 @@ def main(argv=None) -> int:
                 capture = setup.enter_context(RGBDReplaySource(args.input))
                 if args.config is None: config = capture.config
                 source = setup.enter_context(CameraPoseSource(config, capture=capture, metrics=metrics))
+            elif args.source == "opencv-camera":
+                capture = setup.enter_context(OpenCVSource(config))
+                source = setup.enter_context(CameraPoseSource(config, capture=capture, metrics=metrics))
             else:
                 with redirect_stdout(sys.stderr):
                     source = setup.enter_context(CameraPoseSource(config, metrics=metrics))
             simulation = BoxingSimulation(config, challenge=challenge)
-            view = setup.enter_context(SceneView(config, args.source, layout=args.view, sound=args.sound)) if not args.headless else NullView()
             source_metadata = source.describe() if hasattr(source, "describe") else getattr(source, "metadata", {"source": args.source})
+            view_mode = args.source
+            if _opencv_experience_origin(source_metadata):
+                view_mode = "opencv-experience"
+                print("OpenCV EXPERIENCE: host read time; RGB-D synchronization unverified; approximate pinhole geometry. Not a precision or latency evaluation.", file=sys.stderr)
+            view = setup.enter_context(SceneView(config, view_mode, layout=args.view, sound=args.sound)) if not args.headless else NullView()
             metadata.update({"config": config.to_dict(), "source_metadata": source_metadata,
                              "evidence": source_metadata.get("evidence", "unverified"),
                              "program_version": __version__})
@@ -83,8 +100,8 @@ def main(argv=None) -> int:
             # From here run_session owns resources, including every failure path.
             setup.pop_all()
             summary = run_session(source, simulation, view, recorder,
-                args.frames if args.frames is not None else (600 if args.headless and args.source in ("demo", "camera") else None),
-                rgbd_recorder=rgbd_recorder, realtime=not args.headless and args.source != "camera", metrics=metrics)
+                args.frames if args.frames is not None else (600 if args.headless and args.source in ("demo", "camera", "opencv-camera") else None),
+                rgbd_recorder=rgbd_recorder, realtime=not args.headless and args.source not in ("camera", "opencv-camera"), metrics=metrics)
         metadata.update(status="ok", summary=asdict(summary))
     except KeyboardInterrupt:
         print("DepthStrike interrupted; resources closed.", file=sys.stderr)

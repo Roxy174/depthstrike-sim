@@ -90,3 +90,69 @@ def test_replay_runs_to_eof_unless_explicitly_limited(tmp_path):
     replay = command("--source", "replay", "--input", path, "--headless")
     assert replay.returncode == 0, replay.stderr
     assert json.loads(replay.stdout)["frames"] == 650
+
+
+def test_opencv_camera_is_explicit_and_preserves_evidence_in_recording(monkeypatch, tmp_path, capsys):
+    from depthstrike import cli
+    from depthstrike.config import AppConfig
+    from depthstrike.types import Intrinsics, RGBDFrame
+    from types import SimpleNamespace
+    import numpy as np
+    calls = []
+    class Capture:
+        closed = False
+        def __init__(self, config): self.config = config; calls.append(self)
+        def read(self):
+            return RGBDFrame(0, .1, np.zeros((3, 4, 3), np.uint8), np.ones((3, 4), np.float32),
+                             Intrinsics(4, 3, 6, 6, 2, 1.5, "pinhole_approximation"))
+        def describe(self): return {"capture_backend": "opencv_obsensor", "evidence": "unverified",
+            "timestamp_source": "host_monotonic_read_completion", "synchronization": "unverified_no_device_timestamps"}
+        def close(self): self.closed = True
+        def __enter__(self): return self
+        def __exit__(self, *args): self.close()
+    monkeypatch.setattr(cli, "OpenCVSource", Capture)
+    monkeypatch.setattr("depthstrike.sources.PoseEstimator", lambda c: SimpleNamespace(detect=lambda f: {}, close=lambda: None))
+    path = tmp_path/"recording.jsonl"
+    assert cli.main(["--source", "opencv-camera", "--headless", "--frames", "1", "--record", str(path)]) == 0
+    output = capsys.readouterr()
+    assert json.loads(output.out)["source"] == "opencv-camera"
+    header = json.loads(path.read_text().splitlines()[0])
+    assert header["metadata"]["timestamp_source"] == "host_monotonic_read_completion"
+    assert header["metadata"]["synchronization"] == "unverified_no_device_timestamps"
+    assert header["metadata"]["evidence"] == "unverified"
+    assert "approximate" in output.err.lower()
+    assert calls[0].closed
+
+
+def test_opencv_warning_survives_rgbd_to_pose_transcription_and_rerecording(monkeypatch, tmp_path, capsys):
+    from depthstrike import cli
+    from depthstrike.config import AppConfig
+    from depthstrike.recording import RGBDRecorder
+    from depthstrike.types import Intrinsics, RGBDFrame
+    from depthstrike.visualization import NullView
+    from types import SimpleNamespace
+    import numpy as np
+    metadata = {"capture_backend": "opencv_obsensor", "evidence": "unverified",
+        "timestamp_source": "host_monotonic_read_completion", "synchronization": "unverified_no_device_timestamps"}
+    directory, pose, copied_pose = tmp_path/"rgbd", tmp_path/"pose.jsonl", tmp_path/"copy.jsonl"
+    frame = RGBDFrame(0, .1, np.zeros((3, 4, 3), np.uint8), np.ones((3, 4), np.float32),
+                     Intrinsics(4, 3, 6, 6, 2, 1.5, "pinhole_approximation"))
+    with RGBDRecorder(directory, AppConfig(), metadata) as recorder: recorder.write(frame)
+    monkeypatch.setattr("depthstrike.sources.PoseEstimator", lambda c: SimpleNamespace(detect=lambda f: {}, close=lambda: None))
+    modes = []
+    class View(NullView):
+        def __init__(self, config, mode, **kwargs): modes.append(mode)
+        def __enter__(self): return self
+        def __exit__(self, *args): self.close()
+    monkeypatch.setattr(cli, "SceneView", View)
+    commands = [
+        ["--source", "rgbd-replay", "--input", str(directory), "--record", str(pose)],
+        ["--source", "replay", "--input", str(pose), "--record", str(copied_pose)],
+        ["--source", "replay", "--input", str(copied_pose)]]
+    for command in commands:
+        assert cli.main(command) == 0
+        assert "approximate" in capsys.readouterr().err.lower()
+    assert modes == ["opencv-experience"]*3
+    header = json.loads(copied_pose.read_text().splitlines()[0])
+    assert header["metadata"]["evidence"] == "unverified"
+    assert header["metadata"]["recording_metadata"]["synchronization"] == "unverified_no_device_timestamps"

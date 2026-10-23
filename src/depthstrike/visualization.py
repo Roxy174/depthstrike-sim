@@ -49,7 +49,7 @@ def _pixel(position, intrinsics):
         matrix = np.array([[i.fx, 0, i.cx], [0, i.fy, i.cy], [0, 0, 1.]])
         projected, _ = cv2.projectPoints(p.reshape(1, 3), np.zeros(3), np.zeros(3), matrix, np.asarray(i.distortion))
         u, v = projected.reshape(2)
-    elif i.distortion_model == "none":
+    elif i.distortion_model in ("none", "pinhole_approximation"):
         u, v = i.fx*x/z+i.cx, i.fy*y/z+i.cy
     else:
         return None
@@ -73,6 +73,8 @@ def render_hud(state, rgbd_frame, config, mode="demo", trails=None):
     source_label = "Synthetic motion / no camera" if mode == "demo" else f"RGB-D target boxing / {mode}"
     if state.challenge:
         source_label = f"Motion challenge / {mode} / {state.challenge['content_evidence']} content"
+    if mode == "opencv-experience" or (rgbd_frame is not None and rgbd_frame.intrinsics.distortion_model == "pinhole_approximation"):
+        source_label = "OpenCV EXPERIENCE / host time / approximate geometry"
     text(source_label, (26, 61), .48, (227, 218, 207))
     text(state.status.replace("_", " ").title(), (660, 43), .62, (244, 234, 219), 2)
     if rgbd_frame is None:
