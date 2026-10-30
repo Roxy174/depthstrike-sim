@@ -34,6 +34,8 @@ Python 3.12，纯 Python 场景，不依赖 Unity。安装依赖后运行：
 
 默认显示主交互画面；`--view dual` 额外开启三维辅助视图。`--source demo` 为合成动作，`--source camera` 才读取 Gemini 2。真实采集、对齐和人体击球仍待设备验收。安装、模型下载、录制回放和按键见 [运行文档](docs/RUNNING.md)，证据边界见 [验证记录](docs/VERIFICATION.md)。
 
+旧款 Astra（深度 USB PID 060f、彩色 PID 050f）使用独立的 `--source astra-camera` 体验入口，安装与运行见 [Astra 接入说明](docs/ASTRA.md)。
+
 本地 `0.3.0.dev0` 分支增加动作关卡与三维复盘试验。运行 `python -m depthstrike.studio demo --output outputs/studio-try` 可生成并体验合成示例；操作、关卡生成及证据边界见 [Motion Studio](docs/MOTION_STUDIO.md)。
 
 ## 实现方案

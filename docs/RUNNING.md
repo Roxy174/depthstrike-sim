@@ -54,6 +54,8 @@ guided 演示的固定动作支持速度阈值不大于 2 m/s、平滑常数不�
 
 ## 3. Gemini 2
 
+旧款 Astra（OpenNI 深度 + 独立 UVC 彩色）使用 `--source astra-camera`，具体安装、运行及验证边界见 [Astra 接入说明](ASTRA.md)。
+
 ### OpenCV 体验入口（沿用 LAB3）
 
 不依赖 UVC 设备时间戳注册，显式选择后才启用；不会在 SDK 失败时自动切换：

@@ -77,6 +77,8 @@ def render_hud(state, rgbd_frame, config, mode="demo", trails=None):
         source_label = f"Motion challenge / {mode} / {state.challenge['content_evidence']} content"
     if mode == "opencv-experience" or (rgbd_frame is not None and rgbd_frame.intrinsics.distortion_model == "pinhole_approximation"):
         source_label = "OpenCV EXPERIENCE / host time / approximate geometry"
+    if mode == "astra-experience":
+        source_label = "ASTRA EXPERIENCE / host time / factory D2C"
     text(source_label, (26, 61), .48, (227, 218, 207))
     text(state.status.replace("_", " ").title(), (660, 43), .62, (244, 234, 219), 2)
     if rgbd_frame is None:
