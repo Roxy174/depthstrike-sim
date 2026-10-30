@@ -12,7 +12,7 @@
 & "$env:USERPROFILE\.conda\envs\depthstrike\python.exe" -m depthstrike --source astra-camera --config configs/adaptive.json
 ```
 
-增加 `--view dual` 显示三维辅助窗口。`Space` 暂停/继续，`R` 重新校准，`Q` / `Esc` 退出；关闭窗口会释放两个采集接口。启动时显示 `ASTRA EXPERIENCE / host time / factory D2C`。
+增加 `--view dual` 显示三维辅助窗口。`空格` 暂停/继续，`R` 重新校准，`Q` / `Esc` 退出；关闭窗口会释放两个采集接口。窗口标题为“深度拳击｜体感交互”，来源提示为“奥比中光相机体验｜主机计时｜出厂深度对齐”。
 
 调整取景，使双肩、双肘、双腕在画面内，按引导完成收拳、左右舒适前伸、收回、试击和倒计时。追踪条件不足时保留校准提示。所有关节置信度、深度质量和攻击阈值沿用现有配置。
 

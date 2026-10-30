@@ -4,6 +4,7 @@ from collections import deque
 import numpy as np
 
 from .types import DepthStrikeError
+from .ui_text import ARENA_TITLE
 
 COLORS = {"left": (.15, .39, .76), "right": (.81, .41, .18)}
 BONES = (("left_shoulder", "right_shoulder"), ("left_shoulder", "left_elbow"),
@@ -32,8 +33,8 @@ class ArenaRenderer:
                 import open3d as o3d
             self.o3d = o3d
             self.vis = visualizer if visualizer is not None else o3d.visualization.VisualizerWithKeyCallback()
-            if not self.vis.create_window("DepthStrike | 3D target arena", 960, 720, 1000, 60):
-                raise DepthStrikeError("Open3D window failed. Use --view overlay or --headless.")
+            if not self.vis.create_window(ARENA_TITLE, 960, 720, 1000, 60):
+                raise DepthStrikeError("三维窗口创建失败，请使用 --view overlay 或 --headless")
             self.vis.get_render_option().background_color = np.array((.93, .95, .97))
             self.vis.get_render_option().line_width = 3.
             grid = []
@@ -58,7 +59,7 @@ class ArenaRenderer:
         except BaseException as exc:
             self.close()
             if isinstance(exc, DepthStrikeError): raise
-            raise DepthStrikeError(f"Open3D initialization failed: {exc}. Install .[display] or use --view overlay.") from exc
+            raise DepthStrikeError(f"三维视图初始化失败：{exc}。请安装 .[display] 依赖或使用 --view overlay") from exc
 
     def _enqueue(self, action):
         self._actions.append(action)

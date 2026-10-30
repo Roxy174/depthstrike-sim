@@ -9,14 +9,16 @@ import numpy as np
 from .config import AppConfig
 from .motion_challenge import ChallengeRecipe, number
 from .types import DepthStrikeError, vector3
+from .ui_text import (EVIDENCE, HANDS, OUTCOMES, REVIEW_TITLE, SESSIONS, draw_text,
+                      set_window_title)
 
 REASONS = {
-    "hit": "Observed contact satisfied the attack and time window.",
-    "spatial_miss": "The valid attack passed outside the contact region.",
-    "no_valid_attack": "No valid forward attack was observed in this window.",
-    "insufficient_observation": "Observation was interrupted; no correction is inferred.",
-    "window_not_completed": "The session ended before this window was completed.",
-    "entry_outside_window": "Contact entry did not occur inside the active time window.",
+    "hit": "观测到的接触满足出拳条件和目标时间窗。",
+    "spatial_miss": "有效出拳轨迹经过了接触范围之外。",
+    "no_valid_attack": "此时间窗内没有可结算的有效前向出拳。",
+    "insufficient_observation": "观测曾发生中断，因此不推断动作修正。",
+    "window_not_completed": "会话结束时，此目标的时间窗尚未完成。",
+    "entry_outside_window": "进入接触范围的时刻不在目标活动时间窗内。",
 }
 
 
@@ -67,26 +69,26 @@ def render_review(report, selected=0, progress=1.):
     progress = float(np.clip(number(progress, "playback progress"), 0, 1))
     canvas = np.full((820, 1120, 3), (248, 244, 239), np.uint8)
     ink, muted, blue, violet, green = (72, 54, 38), (132, 116, 99), (195, 100, 39), (162, 79, 137), (94, 138, 43)
-    def text(value, at, size=.52, color=ink, weight=1):
-        cv2.putText(canvas, str(value), at, cv2.FONT_HERSHEY_SIMPLEX, size, color, weight, cv2.LINE_AA)
+    def text(value, at, size=.52, color=ink, weight=1, **kwargs):
+        draw_text(canvas, value, at, size, color, weight, **kwargs)
     cv2.rectangle(canvas, (0, 0), (1119, 88), ink, -1)
-    text("DepthStrike / Motion Studio", (24, 36), .88, (255, 255, 255), 2)
-    text(f"Input: {report['evidence']}    Session: {report['status']}    Geometric motion review", (25, 66), .48, (227, 218, 207))
+    text("深度拳击｜动作工坊", (24, 36), .88, (255, 255, 255), 2)
+    text(f"输入：{EVIDENCE.get(report['evidence'], '待核验内容')}　会话：{SESSIONS.get(report['status'], '待核验')}　空间动作复盘", (25, 66), .48, (227, 218, 207))
     row = report["trials"][selected]
-    text("Challenge sequence", (24, 126), .65, weight=2)
-    text(f"{report['hits']} hits / {len(report['trials'])} cues", (24, 156), .55, muted)
+    text("关卡顺序", (24, 126), .65, weight=2)
+    text(f"共 {len(report['trials'])} 靶，命中 {report['hits']} 次", (24, 156), .55, muted, max_width=244)
     first = max(0, min(selected-5, len(report["trials"])-12))
     for n in range(first, min(first+12, len(report["trials"]))):
         trial, y = report["trials"][n], 199+(n-first)*32
         if n == selected: cv2.rectangle(canvas, (16, y-22), (267, y+7), (231, 219, 201), -1)
         color = green if trial["outcome"] == "hit" else (violet if trial.get("counterfactual") else muted)
-        text(f"{n+1:02d}  {trial['hand'].title():5s}  {trial['outcome']}", (25, y), .48, color, 2 if n == selected else 1)
-    text("A / D   previous / next", (24, 650), .46, muted)
-    text("Space   play / pause", (24, 677), .46, muted)
-    text("R   replay motion", (24, 704), .46, muted)
-    text("Q / Esc   close", (24, 731), .46, muted)
-    text(f"Cue {selected+1} / {len(report['trials'])}  -  {row['hand'].title()}", (300, 126), .73, weight=2)
-    text(f"{row['start_s']:.2f} - {row['end_s']:.2f} s    {row['outcome'].replace('_', ' ')}", (300, 155), .52, muted)
+        text(f"{n+1:02d}　{HANDS.get(trial['hand'], '指定手')}　{OUTCOMES.get(trial['outcome'], '待核验')}", (25, y), .48, color, 2 if n == selected else 1, max_width=238)
+    text("A / D：切换靶位", (24, 650), .46, muted)
+    text("空格：播放／暂停", (24, 677), .46, muted)
+    text("R：从头播放", (24, 704), .46, muted)
+    text("Q / Esc：关闭", (24, 731), .46, muted)
+    text(f"第 {selected+1} / {len(report['trials'])} 靶 · {HANDS.get(row['hand'], '指定手')}", (300, 126), .73, weight=2)
+    text(f"{row['start_s']:.2f}～{row['end_s']:.2f} 秒　{OUTCOMES.get(row['outcome'], '待核验')}", (300, 155), .52, muted)
     trajectory = row["trajectory"]
     points = [np.array(s["position_m"]) for s in trajectory if s["position_m"] is not None]
     center = row.get("target_center_m")
@@ -95,13 +97,13 @@ def render_review(report, selected=0, progress=1.):
     if correction: extents.extend(np.asarray(correction["segment_m"]))
     first_t, last_t = (trajectory[0]["t_s"], trajectory[-1]["t_s"]) if trajectory else (0., 1.)
     play_t = first_t + progress * (last_t-first_t)
-    for box, axes, label in (((300, 194, 680, 540), (0, 1), "Front view / X and Y"),
-                             ((716, 194, 1096, 540), (2, 1), "Side view / Z and Y")):
+    for box, axes, label in (((300, 194, 680, 540), (0, 1), "正面视图（左右／上下）"),
+                             ((716, 194, 1096, 540), (2, 1), "侧面视图（前后／上下）")):
         x0, y0, x1, y1 = box
         cv2.rectangle(canvas, (x0, y0), (x1, y1), (255, 255, 255), -1)
         text(label, (x0+10, y0+24), .5, muted)
         if not extents:
-            text("No mapped motion", (x0+70, y0+160), .55, muted)
+            text("暂无可显示的动作", (x0+70, y0+160), .55, muted)
             continue
         values = np.asarray(extents)[:, axes]
         middle = (values.min(axis=0)+values.max(axis=0))/2
@@ -135,20 +137,20 @@ def render_review(report, selected=0, progress=1.):
             cv2.line(canvas, pixel(a), pixel(b), violet, 3, cv2.LINE_AA)
             closest = np.asarray(row["closest_point_m"])
             cv2.arrowedLine(canvas, pixel(closest), pixel(closest+correction["delta_m"]), violet, 2, cv2.LINE_AA, tipLength=.25)
-        text(f"Scale: {span:.2f} m across plotting area", (x0+12, y1-9), .36, muted)
+        text(f"显示范围：{span:.2f} 米", (x0+12, y1-9), .4, muted)
     cv2.rectangle(canvas, (300, 563), (1096, 569), (224, 214, 202), -1)
     cv2.rectangle(canvas, (300, 563), (300+round(796*progress), 569), blue, -1)
-    text(REASONS.get(row["reason"], "No complete observation available."), (300, 610), .49, weight=1)
+    text(REASONS.get(row["reason"], "暂未获得完整观测。"), (300, 610), .49, weight=1)
     if row.get("surface_gap_m") is not None:
-        text(f"Closest surface gap: {row['surface_gap_m']:+.3f} m", (300, 642), .59, blue, 2)
-    text("Blue: motion   Green: target + contact region   Purple: local correction", (300, 678), .44, muted)
+        text(f"最近表面间距：{row['surface_gap_m']:+.3f} 米", (300, 642), .59, blue, 2)
+    text("蓝色：观测轨迹　绿色：目标与接触范围　紫色：局部修正", (300, 678), .44, muted)
     if correction:
         dx, dy, dz = correction["delta_m"]
-        text(f"Local shift  X {dx:+.3f}   Y {dy:+.3f}   Z {dz:+.3f} m", (300, 714), .52, violet, 2)
-        text("Contact rechecked. Only the highlighted segment is translated.", (300, 744), .44, muted)
+        text(f"局部位移：横向 {dx:+.3f}　竖向 {dy:+.3f}　纵深 {dz:+.3f} 米", (300, 714), .52, violet, 2)
+        text("已重新核验接触，仅平移加粗显示的局部线段。", (300, 744), .44, muted)
     else:
-        text("No local correction proposed for this outcome.", (300, 716), .5, muted)
-    text("Camera coordinates: X right, Y down, Z forward. Correction is not a whole-body instruction.", (300, 791), .39, muted)
+        text("该结果未提供局部修正建议。", (300, 716), .5, muted)
+    text("相机坐标：横向向右、竖向向下、纵深向前；局部修正仅作为空间接触参考。", (300, 791), .39, muted)
     return canvas
 
 
@@ -166,11 +168,12 @@ def export_image(report, selected, path):
 def show_review(report, selected=0):
     import cv2
     if os.environ.get("DEPTHSTRIKE_NO_DISPLAY") or (os.name != "nt" and not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY")):
-        raise DepthStrikeError("No display available; use review --image PATH.png")
-    name = "DepthStrike | motion review"
+        raise DepthStrikeError("当前没有可用显示环境，请使用 review --image PATH.png 导出图片")
+    name = f"DepthStrikeReview-{os.getpid()}"
     progress, playing, last = 1., False, time.monotonic()
     try:
         cv2.namedWindow(name, cv2.WINDOW_AUTOSIZE)
+        set_window_title(cv2, name, REVIEW_TITLE)
         cv2.moveWindow(name, 50, 40)
         while cv2.getWindowProperty(name, cv2.WND_PROP_VISIBLE) >= 1:
             now = time.monotonic()

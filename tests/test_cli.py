@@ -23,7 +23,7 @@ def test_finite_headless_demo_has_hits(capsys):
 
 
 def test_headless_does_not_import_sdk_or_graphics():
-    code = "from depthstrike.cli import main; import sys; code=main(['--source','demo','--headless','--frames','30']); assert 'pyorbbecsdk' not in sys.modules; assert 'mediapipe' not in sys.modules; assert 'open3d' not in sys.modules; raise SystemExit(code)"
+    code = "from depthstrike.cli import main; import sys; code=main(['--source','demo','--headless','--frames','30']); assert 'pyorbbecsdk' not in sys.modules; assert 'mediapipe' not in sys.modules; assert 'open3d' not in sys.modules; assert 'PIL' not in sys.modules; raise SystemExit(code)"
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=20)
     assert result.returncode == 0, result.stderr
 

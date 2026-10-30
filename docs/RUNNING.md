@@ -22,7 +22,9 @@ python -m venv .venv
 
 仅无窗口演示和合成评估可安装 `.[dev]`，核心只依赖 NumPy。overlay 需要 OpenCV，dual 另需 Open3D，均包含在 `.[display]`；相机与 RGB-D 回放需要 `.[camera]`。不要混用 Anaconda 全局依赖或 OpenCV headless 变体。
 
-直接依赖固定于 `pyproject.toml`：NumPy 2.2.6、MediaPipe 0.10.32、pyorbbecsdk2 2.1.2、Open3D 0.19.0、OpenCV 4.11.0.86、pytest 8.3.5。SDK 导入名为 `pyorbbecsdk`。两个上游分别要求 OpenCV 标准与扩展分发包，因此固定为同版本，不单独升级。
+直接依赖固定于 `pyproject.toml`：NumPy 2.2.6、MediaPipe 0.10.32、pyorbbecsdk2 2.1.2、Open3D 0.19.0、OpenCV 4.11.0.86、Pillow 13.0.0、pytest 8.3.5。SDK 导入名为 `pyorbbecsdk`。两个上游分别要求 OpenCV 标准与扩展分发包，因此固定为同版本，不单独升级。
+
+图形界面默认使用中文。Windows 自动使用微软雅黑或黑体；其他系统可安装思源黑体，或通过 `DEPTHSTRIKE_FONT` 指定中文字体文件。中文字体由 Pillow 绘制并缓存，无窗口演示不加载 Pillow。主画面、三维辅助窗口和动作复盘分别显示中文窗口标题。
 
 ## 2. 无相机演示
 
@@ -37,7 +39,7 @@ python -m venv .venv
 
 - 蓝色左手，橙色右手；活动球使用对应颜色，未激活球为灰色，命中短时绿色。
 - 拳套圆表示交互代理，腕点与拳心不同；轨迹、出拳和碰撞使用同一拳心。
-- `Gap` 为两代理球表面间距，正值尚未接触；`Depth` 为拳心 z 减目标 z，正值表示拳心仍在球后方；`Off-axis` 为横向偏差。缺失时不沿用旧距离。
+- “表面间距”为两代理球表面间的距离，正值尚未接触；“深度差”为拳心 z 减目标 z，正值表示拳心仍在球后方；“横向偏差”为横向距离。缺失时不沿用旧距离。
 - 二维圆圈重叠不等于三维命中；提示描述当前可观测条件，不保证是未命中的唯一原因。
 
 按键：`Space` 暂停/继续；`R` 清分并重新校准；`Q` / `Esc` 退出。关闭任一已开启窗口也退出并释放资源。引导演示暂停时冻结合成动作，恢复时重启被打断的动作段；`R` 重启演示流程，但录制帧时间仍严格递增。真实相机输入在暂停期间继续读取。
@@ -65,7 +67,7 @@ guided 演示的固定动作支持速度阈值不大于 2 m/s、平滑常数不�
 .venv\Scripts\python.exe -m depthstrike --source opencv-camera --view dual
 ```
 
-使用同一次 `grab()` 后的 BGR／毫米深度数据；验证尺寸和类型，转换为 RGB／米。画面标注 `OpenCV EXPERIENCE / host time / approximate geometry`，仍经过现有的人体置信度、深度有效性和完整上肢检查，不因体验模式降低阈值。
+使用同一次 `grab()` 后的 BGR／毫米深度数据；验证尺寸和类型，转换为 RGB／米。画面标注“相机体验模式｜主机计时｜近似空间计算”，仍经过现有的人体置信度、深度有效性和完整上肢检查，不因体验模式降低阈值。
 
 这里使用主机单调时钟的读取完成时间，不能称作曝光时间、硬件同步或传感器到显示延迟。OpenCV 4.11 的 Gemini 2 后端返回型号默认内参，且没有暴露完整畸变参数，所以内部显式使用 `pinhole_approximation`；不是已验证无畸变模型。体验计分不作为三维精度或同步性能实验结果。记录与报告保留来源和这些限制，不自动录制；只有显式使用 `--record`／`--record-rgbd` 才保存相应人体数据。
 
@@ -169,7 +171,7 @@ Remove-Item Env:DEPTHSTRIKE_GUI_TESTS
 | 模型缺失／DLL 导入失败 | 显式下载，核对 x64 Python、固定依赖和 VC++ 运行库 |
 | 无显示或 Open3D 失败 | 使用 `--view overlay` 或 `--headless`；检查图形驱动 |
 | 校准停住 | 查看阶段与阻塞原因，双臂完整入镜，保持站位和连续稳定时间 |
-| 看似碰到却没计分 | 核对 Depth/Gap、活动手、速度及收拳复位；二维重叠不是命中条件 |
+| 看似碰到却没计分 | 核对深度差、表面间距、活动手、速度及收拳复位；二维重叠不是命中条件 |
 | 输出已存在 | 改用新文件名，不删除或覆盖已有录制来重试 |
 
 证据和限制见 [VERIFICATION.md](VERIFICATION.md)。
