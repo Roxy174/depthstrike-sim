@@ -5,6 +5,7 @@ import hashlib
 import numpy as np
 
 from .config import AppConfig
+from .masks import person_mask_2d
 from .types import DepthStrikeError, FrameTimeout, Landmark, RGBDFrame
 
 JOINT_INDICES = {"nose": 0, "left_shoulder": 11, "right_shoulder": 12,
@@ -25,7 +26,7 @@ def landmarks_from_result(result, width, height) -> dict[str, Landmark]:
     if not result.pose_landmarks:
         return {}
     points = result.pose_landmarks[0]
-    mask = result.segmentation_masks[0].numpy_view() if result.segmentation_masks else None
+    mask = person_mask_2d(result.segmentation_masks[0].numpy_view(), (height, width)) if result.segmentation_masks else None
     landmarks = {}
     for name, index in JOINT_INDICES.items():
         point = points[index]
@@ -67,7 +68,8 @@ class PoseEstimator:
         timestamp = video_timestamp_ms(frame.timestamp_s, self._last_ms)
         image = self.mp.Image(image_format=self.mp.ImageFormat.SRGB, data=np.ascontiguousarray(frame.color_rgb))
         result = self.detector.detect_for_video(image, timestamp)
-        self.last_mask = result.segmentation_masks[0].numpy_view().copy() if result.segmentation_masks else None
+        mask = person_mask_2d(result.segmentation_masks[0].numpy_view(), frame.depth_m.shape) if result.segmentation_masks else None
+        self.last_mask = mask.copy() if mask is not None else None
         self._last_ms = timestamp
         return landmarks_from_result(result, frame.intrinsics.width, frame.intrinsics.height)
 

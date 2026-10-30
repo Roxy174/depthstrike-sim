@@ -2,6 +2,7 @@
 import numpy as np
 
 from .config import AppConfig
+from .masks import person_mask_2d
 from .types import Intrinsics, Joint3D, Landmark, RGBDFrame, SkeletonFrame, vector3
 
 
@@ -42,7 +43,8 @@ def estimate_joint(landmark: Landmark, frame: RGBDFrame, config: AppConfig, *, m
                           max(0, x-r):min(i.width, x+r+1)]
     supported = np.isfinite(patch) & (patch >= config.min_depth_m) & (patch <= config.max_depth_m)
     if config.fusion_mode == "masked":
-        if mask is None or np.shape(mask) != frame.depth_m.shape:
+        mask = person_mask_2d(mask, frame.depth_m.shape)
+        if mask is None:
             return Joint3D(None, invalid_reason="missing_mask")
         local_mask = np.asarray(mask)[max(0, y-r):min(i.height, y+r+1), max(0, x-r):min(i.width, x+r+1)]
         if not np.isfinite(mask[y, x]) or mask[y, x] < config.confidence_threshold:
