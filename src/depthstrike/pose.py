@@ -26,14 +26,13 @@ def landmarks_from_result(result, width, height) -> dict[str, Landmark]:
     if not result.pose_landmarks:
         return {}
     points = result.pose_landmarks[0]
-    mask = person_mask_2d(result.segmentation_masks[0].numpy_view(), (height, width)) if result.segmentation_masks else None
     landmarks = {}
     for name, index in JOINT_INDICES.items():
         point = points[index]
         confidence = min(float(point.visibility or 0), float(point.presence or 0))
-        if mask is not None and 0 <= point.x < 1 and 0 <= point.y < 1:
-            y, x = min(int(point.y*height), height-1), min(int(point.x*width), width-1)
-            confidence = min(confidence, float(mask[y, x]))
+        # Segmentation describes pixels, not landmark visibility. A boundary or
+        # one bad mask pixel must not cancel an otherwise reliable pose point.
+        # Person/depth support is checked over a local patch during fusion.
         landmarks[name] = Landmark(point.x, point.y, confidence)
     return landmarks
 

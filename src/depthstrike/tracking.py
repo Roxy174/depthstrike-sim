@@ -18,6 +18,7 @@ class SkeletonTracker:
         self._velocities = {}
         self._kalman = {}
         self._display_history = {}
+        self._raw_history = {}
         self.display_joints = {}
 
     def update(self, frame: SkeletonFrame) -> SkeletonFrame:
@@ -32,16 +33,33 @@ class SkeletonTracker:
             self._velocities = {}
             self._kalman = {}
             self._display_history = {}
+            self._raw_history = {}
         alpha = 1-math.exp(-dt/self.config.smoothing_tau_s) if connected and self.config.smoothing_tau_s else 1.
         joints = {}
-        names = dict.fromkeys((*frame.joints, *self._kalman, *self._display_history))
+        names = dict.fromkeys((*frame.joints, *self._kalman, *self._display_history, *self._raw_history))
         for name in names:
             joint = frame.joints.get(name, Joint3D(None, invalid_reason="missing_joint"))
+            anchor = self._raw_history.get(name)
+            if anchor is not None and frame.timestamp_s-anchor[0] > self.config.max_track_gap_s:
+                self._raw_history.pop(name, None)
+                anchor = None
             if not joint.is_observed or joint.confidence < self.config.confidence_threshold:
                 self._kalman.pop(name, None)
                 joints[name] = Joint3D(None, invalid_reason=joint.invalid_reason or
                                        ("low_confidence" if joint.position is not None else "missing_joint"))
                 continue
+            if self.config.reject_tracking_outliers:
+                if anchor is not None:
+                    body = name == "nose" or name.endswith(("_shoulder", "_hip"))
+                    speed_limit = self.config.tracking_body_speed_m_s if body else self.config.tracking_hand_speed_m_s
+                    allowance = self.config.tracking_outlier_slack_m + speed_limit*(frame.timestamp_s-anchor[0])
+                    if np.linalg.norm(joint.position-anchor[1]) > allowance:
+                        # Do not teach a filter or the next gate a rejected jump.
+                        self._kalman.pop(name, None)
+                        self._velocities.pop(name, None)
+                        joints[name] = Joint3D(None, invalid_reason="motion_outlier")
+                        continue
+                self._raw_history[name] = (frame.timestamp_s, joint.position.copy())
             old = previous.joints.get(name) if connected else None
             position = joint.position
             if self.config.filter_mode == "kalman":
@@ -69,7 +87,8 @@ class SkeletonTracker:
                     velocity = np.zeros(3)
                     if history is not None and previous is not None and previous.joints.get(name, Joint3D(None)).is_observed:
                         velocity = (joint.position-history[1].position)/(frame.timestamp_s-history[0])
-                        velocity *= min(1., 5./max(1e-9, np.linalg.norm(velocity)))
+                        speed_limit = min(5., self.config.tracking_body_speed_m_s) if name == "nose" or name.endswith(("_shoulder", "_hip")) else 5.
+                        velocity *= min(1., speed_limit/max(1e-9, np.linalg.norm(velocity)))
                     self._display_history[name] = (frame.timestamp_s, joint, velocity)
                 elif history is not None:
                     age = frame.timestamp_s-history[0]

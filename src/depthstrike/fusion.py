@@ -47,9 +47,10 @@ def estimate_joint(landmark: Landmark, frame: RGBDFrame, config: AppConfig, *, m
         if mask is None:
             return Joint3D(None, invalid_reason="missing_mask")
         local_mask = np.asarray(mask)[max(0, y-r):min(i.height, y+r+1), max(0, x-r):min(i.width, x+r+1)]
-        if not np.isfinite(mask[y, x]) or mask[y, x] < config.confidence_threshold:
+        person_support = np.isfinite(local_mask) & (local_mask >= config.confidence_threshold)
+        if np.count_nonzero(person_support) < patch.size*config.depth_min_valid_ratio:
             return Joint3D(None, invalid_reason="outside_person")
-        supported &= np.isfinite(local_mask) & (local_mask >= config.confidence_threshold)
+        supported &= person_support
     valid = patch[supported]
     if valid.size < patch.size*config.depth_min_valid_ratio:
         return Joint3D(None, invalid_reason="insufficient_depth")

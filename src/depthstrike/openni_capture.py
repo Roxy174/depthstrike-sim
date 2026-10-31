@@ -89,13 +89,13 @@ class OpenNI2Depth:
             folder = Path(directory or ".cache/openni2").resolve()
             dll = folder / "OpenNI2.dll"
             if not dll.is_file() or not (folder / "OpenNI2/Drivers/orbbec.dll").is_file():
-                raise DepthStrikeError("Astra OpenNI runtime missing. See docs/ASTRA.md; specify --openni-dir containing OpenNI2.dll and OpenNI2/Drivers.")
+                raise DepthStrikeError("Astra OpenNI runtime missing. See docs/RUNNING.md; specify --openni-dir containing OpenNI2.dll and OpenNI2/Drivers.")
             self._dll_directory = os.add_dll_directory(str(folder))
             self.lib = ct.CDLL(str(dll))
             self._bind_api()
             version = self.lib.oniGetVersion()
             if tuple(getattr(version, name) for name, _ in NativeVersion._fields_) != (2, 3, 0, 86):
-                raise DepthStrikeError("This Astra native layout requires official OpenNI 2.3.0.86 beta6; see docs/ASTRA.md")
+                raise DepthStrikeError("This Astra native layout requires official OpenNI 2.3.0.86 beta6; see docs/RUNNING.md")
             self._check(self.lib.oniInitialize(2003), "initialize OpenNI 2.3")
             self._initialized = True
             devices, count = ct.POINTER(DeviceInfo)(), ct.c_int()

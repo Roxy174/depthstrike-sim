@@ -1,177 +1,130 @@
-# 运行与复现
+# 运行说明
 
-Windows PowerShell，Python 3.12。命令从仓库根目录运行，不需要激活虚拟环境。
+所有命令在项目根目录的 PowerShell 中执行。Python 使用 3.12，下面用 `$py` 指定解释器。
 
-本地 `0.3.0.dev0` 的动作生成关卡与三维复盘入口见 [Motion Studio](MOTION_STUDIO.md)。下文保留基础击球场景的安装与运行方式。
+## 环境
 
-新增的局部追踪、掩膜深度融合、One Euro/Kalman、目标预览及深度遮挡见 [扩展说明](ADAPTIVE.md)。无需相机体验：
+本机已有 `depthstrike` Conda 环境，直接设置：
 
 ```powershell
-.venv\Scripts\python.exe -m depthstrike --source demo --config configs/adaptive.json --view dual
+$py = "$env:USERPROFILE\.conda\envs\depthstrike\python.exe"
 ```
 
-以下完整双侧观测要求适用于默认配置；`configs/adaptive.json` 的逐侧校准与局部交互行为以扩展说明为准。
-
-## 1. 安装
+新电脑可建立独立环境，安装图形界面与 Astra 依赖：
 
 ```powershell
 python -m venv .venv
-.venv\Scripts\python.exe -m pip install -e ".[dev,display,camera]"
-.venv\Scripts\python.exe -m pip check
+$py = (Resolve-Path .venv\Scripts\python.exe).Path
+& $py -m pip install -e ".[dev,display,astra]"
+& $py -m pip check
+& $py scripts/download_pose_model.py
 ```
 
-仅无窗口演示和合成评估可安装 `.[dev]`，核心只依赖 NumPy。overlay 需要 OpenCV，dual 另需 Open3D，均包含在 `.[display]`；相机与 RGB-D 回放需要 `.[camera]`。不要混用 Anaconda 全局依赖或 OpenCV headless 变体。
+模型仅在缺失时下载，已有模型及来源文件不会覆盖。依赖版本统一见 [pyproject.toml](../pyproject.toml)。仅做无窗口合成演示和规则测试可安装 `.[dev]`；Gemini SDK 采集另安装 `.[camera]`。
 
-直接依赖固定于 `pyproject.toml`：NumPy 2.2.6、MediaPipe 0.10.32、pyorbbecsdk2 2.1.2、Open3D 0.19.0、OpenCV 4.11.0.86、Pillow 13.0.0、pytest 8.3.5。SDK 导入名为 `pyorbbecsdk`。两个上游分别要求 OpenCV 标准与扩展分发包，因此固定为同版本，不单独升级。
+界面默认中文。Windows 使用微软雅黑或黑体；其他系统安装中文字体，或设置 `DEPTHSTRIKE_FONT` 为字体文件路径。
 
-图形界面默认使用中文。Windows 自动使用微软雅黑或黑体；其他系统可安装思源黑体，或通过 `DEPTHSTRIKE_FONT` 指定中文字体文件。中文字体由 Pillow 绘制并缓存，无窗口演示不加载 Pillow。主画面、三维辅助窗口和动作复盘分别显示中文窗口标题。
-
-## 2. 无相机演示
+## Astra 摄像头
 
 ```powershell
-.venv\Scripts\python.exe -m depthstrike --source demo
-.venv\Scripts\python.exe -m depthstrike --source demo --view dual
+& $py -m depthstrike --source astra-camera --config configs/adaptive.json
 ```
 
-默认 overlay 为主交互窗口，dual 额外开启三维辅助视图。画面中的人物为明确标注的合成骨架，不读取电脑摄像头，不验证人体检测精度。不是蒙皮三维角色。
+本入口适配已确认的旧款 Astra：深度 USB `2bc5:060f`，独立彩色接口 `2bc5:050f`。本机已安装驱动和运行库；其他电脑还需要：
 
-默认流程：稳定收拳 → 左手舒适前伸 → 收拳 → 右手舒适前伸 → 收拳 → 左右各试击一次 → 2 s 倒计时 → 60 s 回合。演示动作自动执行这些步骤，不绕过校准。
+1. 安装适配设备的 [Orbbec 官方 Astra 驱动](https://www.orbbec.com/developers/openni-sdk/)。本机使用版本 4.3.0.22。
+2. 下载同一官方页面的 **OpenNI SDK 2.3.0.86 beta6，Win64**，将 `Win64-Release/sdk/libs/` 内容放入 `.cache/openni2/`，保留以下结构。
 
-- 蓝色左手，橙色右手；活动球使用对应颜色，未激活球为灰色，命中短时绿色。
-- 拳套圆表示交互代理，腕点与拳心不同；轨迹、出拳和碰撞使用同一拳心。
-- “表面间距”为两代理球表面间的距离，正值尚未接触；“深度差”为拳心 z 减目标 z，正值表示拳心仍在球后方；“横向偏差”为横向距离。缺失时不沿用旧距离。
-- 二维圆圈重叠不等于三维命中；提示描述当前可观测条件，不保证是未命中的唯一原因。
+```text
+.cache/openni2/
+├── OpenNI2.dll
+└── OpenNI2/Drivers/
+    ├── orbbec.dll
+    └── orbbec.ini
+```
 
-按键：`Space` 暂停/继续；`R` 清分并重新校准；`Q` / `Esc` 退出。关闭任一已开启窗口也退出并释放资源。引导演示暂停时冻结合成动作，恢复时重启被打断的动作段；`R` 重启演示流程，但录制帧时间仍严格递增。真实相机输入在暂停期间继续读取。
+也可在启动命令后加 `--openni-dir PATH`。程序检查运行库版本、设备型号、640×480 帧格式和出厂配准状态，不在启动时安装驱动或更新固件。
 
-`--sound` 可选开启 Windows 异步系统提示音；默认静音，不可用于 headless。不支持的平台或音频失败仅停止声音，不影响计分。
+彩色与深度使用独立接口，主机读取时间差检查不能证明曝光同步；画面保留“奥比中光相机体验”标记。实际定位精度与真人稳定性需另行测量。
+
+## 演示和操作
 
 ```powershell
-.venv\Scripts\python.exe -m depthstrike --source demo --headless --frames 600
+& $py -m depthstrike --source demo --config configs/adaptive.json
+& $py -m depthstrike --source demo --config configs/adaptive.json --view dual
+& $py -m depthstrike --source demo --headless --frames 600
 ```
 
-默认参数的固定结果：600 帧、9 次正式命中、90 分。试击不计入。headless 的 demo/camera 默认限制 600 帧；回放默认至 EOF 或回合结束。窗口模式按输入时间播放。
+演示使用合成骨架，不读取相机。默认配置的 600 帧演示为 9 次正式命中、90 分。
 
-guided 演示的固定动作支持速度阈值不大于 2 m/s、平滑常数不大于 0.1 s；不满足几何触达、有效深度或连续采样要求时明确报错。其他参数组合优先使用与之匹配的录制，不将演示参数限制解释为相机算法的限制。
+校准顺序为收拳、左右舒适前伸与收回、左右各试击一次、倒计时，再进入回合。空格暂停／继续，`R` 清分并重新校准，`Q` / `Esc` 或关闭窗口退出。增加 `--sound` 可启用 Windows 提示音。
 
-## 3. Gemini 2
+`adaptive.json` 启用逐侧校准、跳变抑制和 0.20 秒的短暂丢点恢复。“追踪恢复中”时保持姿势，进度暂时冻结；持续缺失、明显移位或暂停会重置当前采样段。灰色空心预测点和“预览”目标只用于显示。
 
-旧款 Astra（OpenNI 深度 + 独立 UVC 彩色）使用 `--source astra-camera`，具体安装、运行及验证边界见 [Astra 接入说明](ASTRA.md)。
+正式目标在校准后固定，改变站位或移动相机后按 `R`。查看“表面间距”“深度差”和“横向偏差”判断空间关系；二维圆圈重叠不直接计分。
 
-### OpenCV 体验入口（沿用 LAB3）
+## 其他输入
 
-不依赖 UVC 设备时间戳注册，显式选择后才启用；不会在 SDK 失败时自动切换：
+| 输入 | 命令参数 | 用途 |
+| --- | --- | --- |
+| Gemini SDK | `--source camera` | 使用设备时间戳、标定及软件对齐；需 `.[camera]` |
+| OpenCV 体验 | `--source opencv-camera` | 主机计时、近似内参；不作为同步或精度验证 |
+| 骨架回放 | `--source replay --input FILE.jsonl` | 重算校准与计分，无需相机 |
+| 彩色与深度回放 | `--source rgbd-replay --input DIRECTORY` | 重新执行姿态检测和深度融合；需 MediaPipe |
+
+Gemini SDK 若报告零设备时间戳，需按 SDK 官方说明注册 UVC 元数据并重新插拔设备；这涉及系统设置。旧的排查过程保留在 [相机检查记录](archive/HISTORY.md#docs-camera-smoke-2026-10-23-md)。采集失败会明确报错。
+
+## 录制与回放
+
+每次使用新的输出文件名或目录，已有输出会拒绝覆盖：
 
 ```powershell
-.venv\Scripts\python.exe -m depthstrike --source opencv-camera
-.venv\Scripts\python.exe -m depthstrike --source opencv-camera --view dual
+& $py -m depthstrike --source demo --headless --frames 600 --record recordings/demo.jsonl
+& $py -m depthstrike --source replay --input recordings/demo.jsonl
+& $py -m depthstrike --source astra-camera --config configs/adaptive.json --record recordings/pose.jsonl --record-rgbd recordings/rgbd
+& $py -m depthstrike --source rgbd-replay --input recordings/rgbd
 ```
 
-使用同一次 `grab()` 后的 BGR／毫米深度数据；验证尺寸和类型，转换为 RGB／米。画面标注“相机体验模式｜主机计时｜近似空间计算”，仍经过现有的人体置信度、深度有效性和完整上肢检查，不因体验模式降低阈值。
+默认不保存图像或人体轨迹。骨架记录保存配置、关节、操作和事件；RGB-D 记录还包含图像、米制深度与标定。真人录制前取得参与者同意，原始人像和模型默认不纳入 Git。
 
-这里使用主机单调时钟的读取完成时间，不能称作曝光时间、硬件同步或传感器到显示延迟。OpenCV 4.11 的 Gemini 2 后端返回型号默认内参，且没有暴露完整畸变参数，所以内部显式使用 `pinhole_approximation`；不是已验证无畸变模型。体验计分不作为三维精度或同步性能实验结果。记录与报告保留来源和这些限制，不自动录制；只有显式使用 `--record`／`--record-rgbd` 才保存相应人体数据。
+## 动作关卡与复盘
 
-同样需要双肩、双肘、双腕同时有效，并不要求腿脚入镜。若空间不足导致这些关节无法入镜，应暂停真人击球测试，不关闭保护条件强行计分。合成演示与离线开发仍可继续。
-
-### SDK 严格入口
-
-显式下载官方模型，模型及同名 `.task.json` 来源说明任一已存在均拒绝覆盖，也不在启动时自动下载：
+以下示例均使用新输出路径：
 
 ```powershell
-.venv\Scripts\python.exe scripts/download_pose_model.py
-.venv\Scripts\python.exe -m depthstrike --source camera
+& $py -m depthstrike.studio demo --output outputs/studio-try
+& $py -m depthstrike.studio demo --output outputs/studio-batch --headless
+& $py -m depthstrike.studio review --input outputs/studio-batch/review.json --trial 2
+& $py -m depthstrike.studio review --input outputs/studio-batch/review.json --trial 2 --image outputs/review.png
 ```
 
-连接 USB 3，关闭占用设备的 Viewer。当前未完成真实设备采集、对齐和人体击球验收；camera 出错会明确失败，不会退回 demo。
+合成示例生成九靶关卡，预设六次命中和三次空间未命中。复盘窗口用 `A / D` 或左右箭头切换靶位，空格播放／暂停，`R` 重播当前轨迹，`Q / Esc` 关闭。`--trial` 从 1 开始。
 
-保持单人正面、固定相机、双肩双肘双腕在画面内。收拳约 0.6 s，依次轻缓前伸并保持约 0.35 s；每次收回约 0.20 s。不需最大伸展，不击打屏幕、设备或实物。目标按每手舒适触达量的 0.85 生成，之后固定于相机空间。移动相机或改变站位后按 `R`。
-
-新模式要求双肩、双肘、双腕及两拳心全部有效；非活动手丢失也会暂停回合计时、取消攻击，恢复后需要收拳。稳定采样中断不累计；倒计时中断后重新准备。若提示恢复站位，保持双肩接近校准参考；若提示距离或触达不足，调整并按 `R` 重来。
-
-目标还必须与中立拳心至舒适前伸拳心的实测线段相交（计入两代理半径）。侧向伸手或过高的 `target_height_m` 导致不相交时，不进入试击；核对直拳方向、目标高度和站位后按 `R`。这是已测路径的保守检查，不等同于完整人体可达空间建模。
-
-拳心为腕点沿前臂方向延长 0.06 m 的代理，不是解剖测量；深度来自可见表面。所有阈值仍需实机调整，不能据计分推断打击力量或专业动作质量。
-
-采集优先 RGB 640×480/30 fps，深度用设备默认流，经软件 D2C 对齐；拒绝尺寸、时间不匹配帧。支持无畸变和标准 Brown–Conrady，包括 SDK 的 `BROWN_CONRADY_K6` 八系数有理模型；全部系数按 `(k1, k2, p1, p2, k3, k4, k5, k6)` 保留。未知或非标准模型不按针孔近似。旧 SDK 缺标定模型字段时必须独立确认后再配置 `legacy_sdk_distortion_model`，不可改名绕过检查。
-
-Windows 首次接入还需注册 UVC 帧元数据，否则设备时间戳可能全部为 0。经设备所有者同意后，在管理员 PowerShell 中运行 SDK 自带脚本，仅注册已连接的 Orbbec 设备：
+自己的完整 guided 骨架录制可转为关卡，再用骨架回放或相机挑战：
 
 ```powershell
-powershell.exe -NoProfile -File ".venv\Lib\site-packages\pyorbbecsdk\shared\obsensor_metadata_win10.ps1" -op install
+& $py -m depthstrike.studio author --input recordings/pose.jsonl --output outputs/my-challenge.json
+& $py -m depthstrike --source replay --input recordings/pose.jsonl --challenge outputs/my-challenge.json --review-output outputs/my-review.json
 ```
 
-随后重新插拔相机，重启采集并检查时间戳是否非零、递增且 RGB／深度差值合格。该操作修改 Windows 设备注册表，不是项目配置；不要为此永久放宽执行策略，不自动升级固件。程序拒绝零设备时间戳，不用主机到达时间代替采集同步。官方原因说明见 [Timestamp Usage Guide](https://github.com/orbbec/OrbbecSDK_v2/blob/main/docs/tutorial/timestamp.md)，本机检查见 [2026-10-23 实机记录](CAMERA_SMOKE_2026-10-23.md)。
+输入须包括完整校准、试击和正式阶段的有效出拳与收回。挑战回放的 `R` 不倒带原始录制，需从头体验时重新启动。复盘的紫色线段表示满足约束的局部空间修正；观测不足和未完成窗口不推断动作错误。
 
-## 4. 录制与回放
-
-每次使用新的文件名或目录，以下路径已存在时会拒绝覆盖。
+## 耗时统计
 
 ```powershell
-.venv\Scripts\python.exe -m depthstrike --source demo --headless --frames 600 --record recordings/guided-demo.jsonl
-.venv\Scripts\python.exe -m depthstrike --source replay --input recordings/guided-demo.jsonl --headless
+& $py -m depthstrike --source demo --headless --frames 600 --metrics outputs/demo-metrics.json
 ```
 
-v2 保存原始三维关节、失效原因、配置、控制操作和事件；回放重新计算校准与计分，事件序列一致。骨架回放不能验证原始深度或姿态模型。
+统计包含采集、推理、融合、模拟与显示等软件阶段。`read` 已包含子阶段，不能重复相加；`frame_total` 排除回放等待，每阶段保留最近 4096 条样本计算分位数。它们不代表曝光到显示的延迟。测试和对比实验见 [开发与测试](DEVELOPMENT.md)。
 
-```powershell
-.venv\Scripts\python.exe -m depthstrike --source camera --record recordings/pose-session.jsonl --record-rgbd recordings/rgbd-session
-.venv\Scripts\python.exe -m depthstrike --source rgbd-replay --input recordings/rgbd-session
-```
-
-RGB-D 回放保存配对图像、米制深度、内参与标定，并重新执行实际模型及融合。仅在参与者同意后录制，原始人像默认不提交。路径、数组类型、声明内存和实际字节数均检查；禁止 pickle 和越界引用。
-
-RGB-D 转存骨架时，来源记为 `rgbd-replay`，原 metadata 完整保留在 `recording_metadata`，`evidence` 标记继续传递；`pose_model` 描述本次推理模型。合成输入不会因转存而成为真实录制证据。
-
-v1 记录缺少新配置时显式采用 legacy：原手腕代理、固定距离和旧计时规则。随仓库的 4 帧夹具仍为 2 命中、20 分。显式 `--config` 会替代记录配置，结果可能改变。
-
-```powershell
-.venv\Scripts\python.exe -m depthstrike --source replay --input tests/fixtures/straight_punches.jsonl --headless
-.venv\Scripts\python.exe -m depthstrike --source demo --config configs/legacy.json --headless --frames 240
-```
-
-第二条是兼容模式：240 帧、6 命中、60 分；不是新引导模式的预期值。
-
-## 5. 软件耗时与对比实验
-
-```powershell
-.venv\Scripts\python.exe -m depthstrike --source demo --headless --frames 600 --metrics outputs/demo-metrics.json
-.venv\Scripts\python.exe -m depthstrike.evaluation --suite synthetic --output outputs/synthetic-comparison.json
-```
-
-metrics 记录 read、simulation、record、render、frame_total；相机或 RGB-D 回放另记录 capture、pose、fusion。read 已包含其子阶段，不可重复相加；frame_total 排除回放等待。每阶段最多保留最后 4096 条样本，p50/p95/max 基于保留样本，另给全程计数、失败次数、超时数和结束原因。read 包含超时/EOF 读取，frame_total 不包含 EOF；样本数不一定等于成功帧数。
-
-初始化或运行失败时也尽可能导出 partial 统计。`processing_s` 是整个软件会话耗时，所有这些数值都不是曝光到显示的端到端延迟，也不能用无窗口 demo 的速度声称摄像头 FPS。
-
-实验标签、四种方法的定义及真人数据要求见 [EVALUATION.md](EVALUATION.md)。默认只有合成证据。
-
-## 6. 配置与测试
-
-配置为 JSON，可只覆盖所需字段；完整校验见 `src/depthstrike/config.py`。guided 目标使用 `target_reach_ratio`，`target_forward_m` 仅对 legacy 生效。默认半径：拳套 0.06 m、目标 0.08 m；最大轨迹间隔 0.2 s；它们不是人体实测的最优参数。
-
-```powershell
-.venv\Scripts\python.exe -m depthstrike --config configs/default.json
-$testTemp = Join-Path (Get-Location) ("tmp/pytest-" + [guid]::NewGuid().ToString("N"))
-.venv\Scripts\python.exe -m pytest -q --basetemp $testTemp
-```
-
-独立的仓库内临时目录避免部分受管 Windows 环境中系统 Temp 权限问题。它只用于测试，不要指定已有资料目录。真实窗口测试需要桌面会话：
-
-```powershell
-$env:DEPTHSTRIKE_GUI_TESTS = '1'
-$testTemp = Join-Path (Get-Location) ("tmp/pytest-gui-" + [guid]::NewGuid().ToString("N"))
-.venv\Scripts\python.exe -m pytest -q --basetemp $testTemp
-Remove-Item Env:DEPTHSTRIKE_GUI_TESTS
-```
-
-## 7. 故障定位
+## 常见问题
 
 | 现象 | 处理 |
 | --- | --- |
-| 无设备／连续 5 s 无有效帧 | USB 3、供电、Viewer 占用、SDK/固件配套；先用官方 Viewer 验证，不自动升级固件 |
-| 模型缺失／DLL 导入失败 | 显式下载，核对 x64 Python、固定依赖和 VC++ 运行库 |
-| 无显示或 Open3D 失败 | 使用 `--view overlay` 或 `--headless`；检查图形驱动 |
-| 校准停住 | 查看阶段与阻塞原因，双臂完整入镜，保持站位和连续稳定时间 |
-| 看似碰到却没计分 | 核对深度差、表面间距、活动手、速度及收拳复位；二维重叠不是命中条件 |
-| 输出已存在 | 改用新文件名，不删除或覆盖已有录制来重试 |
-
-证据和限制见 [VERIFICATION.md](VERIFICATION.md)。
+| 找到 0 个 Astra 深度设备 | 检查 USB、供电和驱动，确认设备管理器中 `ORBBEC Depth Sensor` 在线，关闭占用相机的程序 |
+| 骨架或目标跳动 | 使用 `configs/adaptive.json`；保持光照和单人正面取景，双肩双肘双手入镜；移动后按 `R` |
+| 校准反复停住 | 看当前引导，短暂恢复时保持姿势；持续缺失则调整取景和站位 |
+| 看似碰到但没计分 | 检查深度差、活动手、出拳速度及是否收拳复位 |
+| 模型缺失或 DLL 失败 | 核对 Python x64、依赖与运行库，缺模型时运行下载脚本 |
+| 中文字体或三维窗口失败 | 设置 `DEPTHSTRIKE_FONT`；显示问题可用 `--view overlay` 或 `--headless` 排查 |
+| 输出已存在 | 使用新文件名或目录 |

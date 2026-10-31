@@ -51,7 +51,8 @@ class GuidedCalibration:
         self.stage = "HOLD_GUARD"
         self.profile = None
         self._last_t = None
-        self._samples = []
+        self._last_valid_t = None
+        self._clear_samples()
         self._reference = {}
         self._neutral_fists = {}
         self._neutral = {}
@@ -63,8 +64,15 @@ class GuidedCalibration:
 
     def invalidate(self):
         self._last_t = None
-        self._samples = []
+        self._last_valid_t = None
+        self._clear_samples()
         self._countdown_start = None
+
+    def _clear_samples(self):
+        self._samples = []
+        self._hold_elapsed = 0.
+        self._hold_last_t = None
+        self._hold_progress = 0.
 
     def _state(self, message, progress=0.):
         self.state = GuidanceState(self.stage, float(np.clip(progress, 0, 1)), message, self.profile)
@@ -72,17 +80,19 @@ class GuidedCalibration:
 
     def _transition(self, stage):
         self.stage = stage
-        self._samples = []
+        self._clear_samples()
         self._countdown_start = None
         return self._state(stage.lower())
 
     def _hold(self, timestamp, points, duration):
         if self._samples and np.linalg.norm(points - self._samples[0][1], axis=1).max() > self.config.calibration_motion_m:
-            self._samples = []
+            self._clear_samples()
+        if self._hold_last_t is not None:
+            self._hold_elapsed += timestamp - self._hold_last_t
+        self._hold_last_t = timestamp
         self._samples.append((timestamp, points.copy()))
-        elapsed = timestamp - self._samples[0][0]
-        return (duration == 0 or elapsed + 1e-9 >= duration,
-                1. if duration == 0 else min(1., elapsed / duration))
+        self._hold_progress = 1. if duration == 0 else min(1., self._hold_elapsed / duration)
+        return duration == 0 or self._hold_elapsed + 1e-9 >= duration, self._hold_progress
 
     def _profile(self):
         c = self.config
@@ -129,16 +139,27 @@ class GuidedCalibration:
         if broken:
             self.invalidate()
         self._last_t = t
+        if dt is not None and dt <= 0:
+            return self._state("timestamp_invalid")
         hands = HANDS
         if c.partial_tracking and self.stage.startswith(("REACH", "RETURN", "PRACTICE")):
             hands = ("left" if self.stage.endswith("LEFT") else "right",)
         available = {h: valid_hand(frame, fists, h, c) for h in HANDS}
         valid = (any(available.values()) if self.stage == "RUNNING" else all(available[h] for h in hands)) if c.partial_tracking else valid_body(frame, fists, c)
         if not valid:
-            self.invalidate()
-            return self._state("missing_body")
-        if dt is not None and dt <= 0:
-            return self._state("timestamp_invalid")
+            # Only valid, consecutive observations contribute hold time. Keep
+            # existing samples through a bounded pose/depth dropout, but never
+            # count that dropout toward completing the stage or countdown.
+            self._hold_last_t = None
+            self._countdown_start = None
+            if (c.calibration_grace_s == 0 or self._last_valid_t is None
+                    or t-self._last_valid_t > c.calibration_grace_s + 1e-9):
+                self._clear_samples()
+            return self._state("reacquiring" if self._samples else "missing_body", self._hold_progress)
+        if (self._samples and self._hold_last_t is None and self._last_valid_t is not None
+                and t-self._last_valid_t > c.calibration_grace_s + 1e-9):
+            self._clear_samples()
+        self._last_valid_t = t
         shoulders = {h: frame.joints[f"{h}_shoulder"].position for h in HANDS if available[h]}
         extensions = {h: float(shoulders[h][2] - fists[h].position[2]) for h in shoulders}
         thresholds = self.profile.guard_thresholds if self.profile else {h: c.guard_extension_m for h in HANDS}
@@ -159,7 +180,7 @@ class GuidedCalibration:
             return self._state(self.stage.lower())
         if self.stage == "HOLD_GUARD":
             if not guard:
-                self._samples = []
+                self._clear_samples()
                 return self._state("return_guard")
             points = np.stack([shoulders[h] for h in HANDS] + [fists[h].position for h in HANDS])
             done, progress = self._hold(t, points, c.calibration_duration_s)
@@ -171,16 +192,16 @@ class GuidedCalibration:
             self._neutral = {h: float(self._reference[h][2] - self._neutral_fists[h][2]) for h in HANDS}
             return self._transition("REACH_LEFT")
         if any(np.linalg.norm(shoulders[h] - self._reference[h]) > c.calibration_motion_m for h in shoulders):
-            self._samples = []
+            self._clear_samples()
             return self._state("restore_position")
         hand = "left" if self.stage.endswith("LEFT") else "right"
         if self.stage.startswith("REACH"):
             if extensions[hand] < self._neutral[hand] + c.reach_min_increment_m:
-                self._samples = []
+                self._clear_samples()
                 return self._state(self._profile_error or "extend_comfortably")
             p = fists[hand].position
             if not c.min_depth_m + c.hand_radius_m <= p[2] <= c.max_depth_m - c.hand_radius_m:
-                self._samples = []
+                self._clear_samples()
                 return self._state("adjust_distance")
             self._profile_error = None
             points = np.stack([shoulders[h] for h in hands] + [p - shoulders[hand]])
@@ -191,7 +212,7 @@ class GuidedCalibration:
             self._reaches[hand] = -float(self._reach_vectors[hand][2])
             return self._transition(f"RETURN_{hand.upper()}")
         if not guard:
-            self._samples = []
+            self._clear_samples()
             return self._state("return_guard")
         points = np.stack([fists[h].position for h in hands])
         done, progress = self._hold(t, points, c.return_guard_s)

@@ -3,6 +3,9 @@
   "fist_mode": "hand",
   "filter_mode": "one_euro",
   "partial_tracking": true,
+  "reject_tracking_outliers": true,
+  "calibration_grace_s": 0.2,
+  "prediction_horizon_s": 0.2,
   "preview_targets": true,
   "depth_occlusion": true,
   "spatial_layout": true

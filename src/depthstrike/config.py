@@ -33,6 +33,7 @@ class AppConfig:
     max_attack_duration_s: float = .8
     calibration_duration_s: float = .6
     calibration_motion_m: float = .06
+    calibration_grace_s: float = 0.0
     target_forward_m: float = .5
     target_height_m: float = .04
     hit_flash_s: float = .25
@@ -45,6 +46,10 @@ class AppConfig:
     fist_mode: str = "forearm"
     filter_mode: str = "exponential"
     partial_tracking: bool = False
+    reject_tracking_outliers: bool = False
+    tracking_outlier_slack_m: float = .08
+    tracking_body_speed_m_s: float = 2.0
+    tracking_hand_speed_m_s: float = 10.0
     preview_targets: bool = False
     depth_occlusion: bool = False
     spatial_layout: bool = False
@@ -60,7 +65,7 @@ class AppConfig:
             if item.name in choices:
                 if value not in choices[item.name]: raise ValueError(f"Unsupported {item.name}")
                 continue
-            if item.name in ("partial_tracking", "preview_targets", "depth_occlusion", "spatial_layout"):
+            if item.name in ("partial_tracking", "preview_targets", "depth_occlusion", "spatial_layout", "reject_tracking_outliers"):
                 if type(value) is not bool: raise ValueError(f"{item.name} must be boolean")
                 continue
             if item.name == "interaction_mode":
@@ -77,7 +82,7 @@ class AppConfig:
                 continue
             if isinstance(value, bool) or not isinstance(value, (float, int)) or not math.isfinite(value):
                 raise ValueError(f"{item.name} must be finite and numeric")
-            if value < 0 or (value == 0 and item.name not in {"smoothing_tau_s", "calibration_duration_s", "target_height_m", "fist_offset_m"}):
+            if value < 0 or (value == 0 and item.name not in {"smoothing_tau_s", "calibration_duration_s", "target_height_m", "fist_offset_m", "calibration_grace_s"}):
                 raise ValueError(f"{item.name} must be positive")
         if not 0 < self.target_reach_ratio < 1:
             raise ValueError("target_reach_ratio must be in (0, 1)")

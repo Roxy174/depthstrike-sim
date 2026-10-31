@@ -28,7 +28,7 @@ def test_native_mask_layout_preserves_valid_shoulder_in_camera_pipeline(shape):
     assert joint.position == pytest.approx((0, 0, 2))
 
 
-def test_single_channel_native_mask_confidence_is_scalar_without_deprecation():
+def test_single_channel_mask_does_not_override_pose_confidence():
     mask = np.ones((6, 8, 1), np.float32)
     mask[3, 4, 0] = .25
     result = SimpleNamespace(
@@ -37,7 +37,7 @@ def test_single_channel_native_mask_confidence_is_scalar_without_deprecation():
     with warnings.catch_warnings():
         warnings.simplefilter("error", DeprecationWarning)
         landmarks = landmarks_from_result(result, 8, 6)
-    assert landmarks["left_shoulder"].confidence == .25
+    assert landmarks["left_shoulder"].confidence == .8
 
 
 @pytest.mark.parametrize("shape", [(6, 8, 3), (8, 6, 1), (1, 6, 8)])

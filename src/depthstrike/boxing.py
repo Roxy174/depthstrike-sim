@@ -236,8 +236,9 @@ class BoxingSimulation:
             self.invalidate_tracking()
             return self._guided_state(filtered, fists, (), "FINISHED", {}, guidance)
         was_running = guidance.stage == "RUNNING"
-        if not valid and not local:
-            self.invalidate_tracking()
+        # Each invalid hand is reset by PunchTracker below. A missing joint
+        # must not erase filtering of the other observed joints or bypass the
+        # calibration's bounded reacquisition policy.
         guidance = self.calibration.update(filtered, fists)
         if guidance.profile is not None and not self._centers:
             self._centers = [guidance.profile.target_centers[h].copy() for h in ("left", "right")]
@@ -309,7 +310,9 @@ class BoxingSimulation:
             preview = []
             for n, hand in enumerate(("left", "right")):
                 shoulder = frame.joints.get(f"{hand}_shoulder")
-                if shoulder is not None and shoulder.is_observed:
+                if shoulder is None or not shoulder.is_observed:
+                    shoulder = self.tracker.display_joints.get(f"{hand}_shoulder")
+                if shoulder is not None and shoulder.position is not None:
                     center = shoulder.position+np.array((0, self.config.target_height_m, -self.config.target_forward_m))
                     if center[2] > self.config.target_radius_m:
                         preview.append(Target(n, hand, center, self.config.target_radius_m, False, preview=True))

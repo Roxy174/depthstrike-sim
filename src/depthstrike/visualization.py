@@ -24,6 +24,7 @@ GUIDANCE = {
     "reach_too_small": "前伸距离不足，请舒适地重试或按 R 重新校准",
     "target_unreachable": "请检查目标高度和前伸方向，按 R 重新校准",
     "missing_body": "请让双肩、双肘和双腕保持入镜",
+    "reacquiring": "追踪短暂中断，校准进度已保留，请保持当前姿势",
     "timestamp_invalid": "正在等待连续、稳定的采集数据",
     "practice_left": "左手试击：用左拳击打蓝色目标球",
     "practice_right": "右手试击：用右拳击打橙色目标球",
@@ -41,6 +42,7 @@ REASONS = {"depth_gap": "前后距离尚未到达目标", "off_axis": "请朝目
            "insufficient_depth": "有效深度数据不足", "out_of_frame": "请回到相机视野内",
            "missing_mask": "暂未获得人体分割结果", "outside_person": "关键点不在有效人体区域内",
            "timestamp_invalid": "采集数据不连续，请保持稳定", "attacking": "正在有效出拳",
+           "motion_outlier": "已排除瞬时位置跳变，请保持稳定",
            "calibrating": "请按照校准引导完成动作", "paused": "已暂停", "finished": "回合结束"}
 
 
@@ -84,7 +86,8 @@ def render_hud(state, rgbd_frame, config, mode="demo", trails=None):
     if mode == "astra-experience":
         source_label = "奥比中光相机体验｜主机计时｜出厂深度对齐"
     text(source_label, (26, 61), .48, (227, 218, 207))
-    text(STATUSES.get(state.status, "状态更新中"), (660, 43), .62, (244, 234, 219), 2)
+    recovering = state.guidance is not None and state.guidance.message_code == "reacquiring"
+    text("追踪恢复中" if recovering else STATUSES.get(state.status, "状态更新中"), (660, 43), .62, (244, 234, 219), 2)
     if rgbd_frame is None:
         image = np.full((360, 640, 3), (239, 233, 226), np.uint8)
         intrinsics = Intrinsics(640, 360, 750, 750, 320, 130)
