@@ -7,13 +7,16 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class AppConfig:
+    # Keep historical record defaults; load_config selects direct live play.
     interaction_mode: str = "guided"
+    direct_target_forward_m: float = .38
     fist_offset_m: float = .06
     forearm_min_length_m: float = .02
     reach_hold_s: float = .35
     return_guard_s: float = .20
     reach_min_increment_m: float = .10
     target_reach_ratio: float = .85
+    target_layout: str = "shoulder"
     countdown_s: float = 2.0
     hand_radius_m: float = .06
     target_radius_m: float = .08
@@ -50,7 +53,7 @@ class AppConfig:
     tracking_outlier_slack_m: float = .08
     tracking_body_speed_m_s: float = 2.0
     tracking_hand_speed_m_s: float = 10.0
-    preview_targets: bool = False
+    preview_targets: bool = False  # Accepted for old records; no targets before reach is measured.
     depth_occlusion: bool = False
     spatial_layout: bool = False
     prediction_horizon_s: float = .12
@@ -60,7 +63,8 @@ class AppConfig:
     def __post_init__(self):
         for item in fields(self):
             value = getattr(self, item.name)
-            choices = {"fusion_mode": ("conservative", "masked"), "fist_mode": ("forearm", "hand"),
+            choices = {"target_layout": ("shoulder", "measured_path"),
+                       "fusion_mode": ("conservative", "masked"), "fist_mode": ("forearm", "hand", "wrist"),
                        "filter_mode": ("exponential", "one_euro", "kalman")}
             if item.name in choices:
                 if value not in choices[item.name]: raise ValueError(f"Unsupported {item.name}")
@@ -69,8 +73,8 @@ class AppConfig:
                 if type(value) is not bool: raise ValueError(f"{item.name} must be boolean")
                 continue
             if item.name == "interaction_mode":
-                if value not in ("guided", "legacy"):
-                    raise ValueError("interaction_mode must be guided or legacy")
+                if value not in ("direct", "guided", "legacy"):
+                    raise ValueError("interaction_mode must be direct, guided or legacy")
                 continue
             if item.name == "legacy_sdk_distortion_model":
                 if value not in ("unknown", "brown_conrady", "none"):
@@ -103,12 +107,12 @@ class AppConfig:
 
 
 def load_config(path: Path | None = None) -> AppConfig:
-    if path is None:
-        return AppConfig()
-    values = json.loads(Path(path).read_text(encoding="utf-8"))
+    values = {} if path is None else json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(values, dict):
         raise ValueError("Configuration must be a JSON object")
     unknown = set(values) - {f.name for f in fields(AppConfig)}
     if unknown:
         raise ValueError(f"Unknown configuration fields: {', '.join(sorted(unknown))}")
-    return AppConfig(**values)
+    defaults = ({"interaction_mode": "direct", "fist_mode": "wrist", "partial_tracking": True}
+                if values.get("interaction_mode", "direct") == "direct" else {})
+    return AppConfig(**(defaults | values))

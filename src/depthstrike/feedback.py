@@ -22,7 +22,8 @@ def build_feedback(fists: dict[str, Joint3D], targets: tuple[Target, ...], phase
         fist = fists.get(hand)
         target = next((t for t in targets if t.hand == hand), None)
         global_reason = {"PAUSED": "paused", "FINISHED": "finished", "TRACKING LOST": "invalid_tracking",
-                         "WAITING FOR CAMERA": "invalid_tracking"}.get(status)
+                         "WAITING FOR CAMERA": "invalid_tracking", "WAITING FOR PLAYER": "invalid_tracking",
+                         "ADJUST DISTANCE": "adjust_distance"}.get(status)
         if global_reason or fist is None or fist.position is None:
             reason = global_reason or (fist.invalid_reason if fist else None) or "missing_joint"
             result[hand] = HandFeedback(reason, None, None, None)

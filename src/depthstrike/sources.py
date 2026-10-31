@@ -5,7 +5,7 @@ import numpy as np
 from .capture import GeminiSource
 from .config import AppConfig
 from .fusion import fuse_skeleton
-from .interaction import estimate_fist
+from .interaction import estimate_hand
 from .pose import PoseEstimator
 from .types import Joint3D, SkeletonFrame
 
@@ -113,16 +113,17 @@ class DemoPoseSource:
             self._rewind_guided_phase()
 
     def _validate_guided_geometry(self):
+        from .calibration import calibrated_target_center
         from .geometry import segment_sphere_intersection
         c = self.config
         elbow = Joint3D((0, .16, 1.93), 1)
-        neutral = estimate_fist(elbow, Joint3D((0, .04, 1.85), 1), c)
-        extended = estimate_fist(elbow, Joint3D((0, .04, 1.35), 1), c)
+        neutral = estimate_hand({"left_elbow": elbow, "left_wrist": Joint3D((0, .04, 1.85), 1)}, "left", c)
+        extended = estimate_hand({"left_elbow": elbow, "left_wrist": Joint3D((0, .04, 1.35), 1)}, "left", c)
         if neutral.position is None or extended.position is None:
             raise ValueError("Demo cannot construct valid fist proxies with this configuration")
         reach = 2. - extended.position[2]
-        center = np.array((0, c.target_height_m, 2. - c.target_reach_ratio * reach))
-        safe = (2. - neutral.position[2] <= c.guard_extension_m
+        center = calibrated_target_center(np.array((0., 0., 2.)), neutral.position, extended.position, c)
+        safe = (center is not None and 2. - neutral.position[2] <= c.guard_extension_m
                 and reach - (2. - neutral.position[2]) >= c.reach_min_increment_m
                 and all(c.min_depth_m + r <= p[2] <= c.max_depth_m - r for p, r in (
                     (neutral.position, c.hand_radius_m), (extended.position, c.hand_radius_m), (center, c.target_radius_m)))

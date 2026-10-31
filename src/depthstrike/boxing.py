@@ -5,6 +5,7 @@ import numpy as np
 
 from .config import AppConfig
 from .calibration import GuidedCalibration, valid_body
+from .automatic_layout import AutomaticLayout
 from .geometry import segment_sphere_intersection
 from .interaction import estimate_fist
 from .feedback import build_feedback
@@ -102,7 +103,8 @@ class BoxingSimulation:
             self.challenge = ChallengeRound(challenge, config)
         self.tracker = SkeletonTracker(config)
         self.punches = {hand: PunchTracker(config) for hand in ("left", "right")}
-        self.calibration = GuidedCalibration(config) if config.interaction_mode == "guided" else None
+        self.calibration = (AutomaticLayout(config) if config.interaction_mode == "direct" else
+                            GuidedCalibration(config) if config.interaction_mode == "guided" else None)
         self.reset()
 
     def reset(self):
@@ -125,6 +127,7 @@ class BoxingSimulation:
         self.invalidate_tracking()
 
     def invalidate_tracking(self):
+        self._capture_reach = False
         self.tracker.reset()
         self._proxy_sources = {}
         for tracker in self.punches.values():
@@ -141,6 +144,10 @@ class BoxingSimulation:
             self.paused = paused
             self._skip_time = True
             self.invalidate_tracking()
+
+    def request_reach_capture(self):
+        if not self.paused and self.calibration is not None and self.calibration.stage.startswith("REACH_"):
+            self._capture_reach = True
 
     def set_workspace(self, workspace):
         if self.calibration is not None:
@@ -213,6 +220,8 @@ class BoxingSimulation:
         return self._state(filtered, tuple(events), status, {h: s.phase for h, s in states.items()})
 
     def _step_guided(self, frame):
+        capture = self._capture_reach
+        self._capture_reach = False
         previous_t = self._last_t
         dt = frame.timestamp_s - previous_t if previous_t is not None else 0.
         self._last_t = frame.timestamp_s
@@ -235,16 +244,19 @@ class BoxingSimulation:
         if self._elapsed >= self.config.round_duration_s:
             self.invalidate_tracking()
             return self._guided_state(filtered, fists, (), "FINISHED", {}, guidance)
-        was_running = guidance.stage == "RUNNING"
+        was_running = guidance.stage == "RUNNING" and guidance.profile is not None
         # Each invalid hand is reset by PunchTracker below. A missing joint
         # must not erase filtering of the other observed joints or bypass the
         # calibration's bounded reacquisition policy.
-        guidance = self.calibration.update(filtered, fists)
+        # Consume an explicit confirmation on this fresh frame. A processing
+        # gap still resets attack history, without losing the user's command.
+        capture = capture and (previous_t is None or dt > 0)
+        guidance = self.calibration.update(filtered, fists, capture=capture)
         if guidance.profile is not None and not self._centers:
             self._centers = [guidance.profile.target_centers[h].copy() for h in ("left", "right")]
             for tracker in self.punches.values():
                 tracker.reset()
-        running = guidance.stage == "RUNNING"
+        running = guidance.stage == "RUNNING" and guidance.profile is not None
         if running and was_running and valid and self._guided_valid_previous and dt > 0:
             self._elapsed += dt
         self._guided_valid_previous = valid and running
@@ -297,6 +309,11 @@ class BoxingSimulation:
                         self._flashes[active] = self._elapsed + self.config.hit_flash_s
                         self._active = 1 - active
         status = "TRACKING LOST" if not valid else ("RUNNING" if running else "CALIBRATING")
+        if self.config.interaction_mode == "direct" and not running:
+            status = "ADJUST DISTANCE" if guidance.message_code == "adjust_distance" else "WAITING FOR PLAYER"
+        if local and running:
+            # After a hit, timer continuity follows the newly active hand.
+            self._guided_valid_previous = hand_valid[("left", "right")[self._active]]
         return self._guided_state(filtered, fists, tuple(events), status, states, guidance)
 
     def _guided_state(self, frame, fists, events, status, states, guidance):
@@ -306,19 +323,10 @@ class BoxingSimulation:
                                self._practice_flashes.get(n, -1) > frame.timestamp_s)
                         for n, (hand, center) in enumerate(zip(("left", "right"), self._centers)))
         phases = {h: s.phase for h, s in states.items()}
-        if not targets and self.config.preview_targets:
-            preview = []
-            for n, hand in enumerate(("left", "right")):
-                shoulder = frame.joints.get(f"{hand}_shoulder")
-                if shoulder is None or not shoulder.is_observed:
-                    shoulder = self.tracker.display_joints.get(f"{hand}_shoulder")
-                if shoulder is not None and shoulder.position is not None:
-                    center = shoulder.position+np.array((0, self.config.target_height_m, -self.config.target_forward_m))
-                    if center[2] > self.config.target_radius_m:
-                        preview.append(Target(n, hand, center, self.config.target_radius_m, False, preview=True))
-            targets = tuple(preview)
+        # Guided records place targets after measurement; direct play uses
+        # AutomaticLayout's preset. Neither mode needs preview targets.
         challenge_display = None
-        if self.challenge is not None and guidance.stage == "RUNNING":
+        if self.challenge is not None and guidance.stage == "RUNNING" and guidance.profile is not None:
             targets = self.challenge.visible_targets()
             challenge_display = self.challenge.display()
         diagnostics = {h: s.reason for h, s in states.items()}
@@ -326,7 +334,8 @@ class BoxingSimulation:
         feedback = build_feedback(fists, targets, phases, feedback_status, self.config, diagnostics)
         return SceneState(frame, targets, self.score, self.hits,
                           max(0., (self.challenge.recipe.duration_s if challenge_display else self.config.round_duration_s) - self._elapsed), events, status,
-                          phases, guidance, fists, feedback, diagnostics, challenge_display,
+                          phases, None if self.config.interaction_mode == "direct" else guidance,
+                          fists, feedback, diagnostics, challenge_display,
                           dict(self.tracker.display_joints))
 
     def _state(self, frame, events, status, phases):

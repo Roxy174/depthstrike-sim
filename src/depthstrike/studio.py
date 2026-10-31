@@ -48,7 +48,7 @@ def create_demo(directory):
 def main(argv=None):
     parser = argparse.ArgumentParser(description="DepthStrike Motion Studio local prototype")
     commands = parser.add_subparsers(dest="command", required=True)
-    author = commands.add_parser("author", help="derive a challenge from a guided pose recording")
+    author = commands.add_parser("author", help="derive a challenge from completed punches in a pose recording")
     author.add_argument("--input", type=Path, required=True)
     author.add_argument("--output", type=Path, required=True)
     demo = commands.add_parser("demo", help="create and play a new synthetic example directory")

@@ -155,11 +155,11 @@ def test_virtual_sphere_is_occluded_by_nearer_real_surface():
     assert not target_visibility_mask(f, np.array((0, 0, 2)), .2).any()
 
 
-def test_setup_preview_is_visible_but_never_scores(skeleton):
+def test_setup_does_not_show_unmeasured_targets_even_with_old_preview_flag(skeleton):
     from depthstrike.boxing import BoxingSimulation
     sim = BoxingSimulation(AppConfig(preview_targets=True))
     state = sim.step(skeleton(0))
-    assert len(state.targets) == 2 and all(t.preview and not t.active for t in state.targets)
+    assert not state.targets
     assert state.score == 0 and not state.events
 
 

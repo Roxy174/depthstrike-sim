@@ -51,14 +51,12 @@ def test_expired_anchor_does_not_permanently_lock_out_a_new_position(skeleton):
     assert joint.position == pytest.approx((.6, 0, 2))
 
 
-def test_outlier_cannot_move_the_calibration_preview_or_create_a_hit(skeleton):
+def test_outlier_cannot_move_the_display_anchor_or_create_an_early_target(skeleton):
     sim = BoxingSimulation(config(preview_targets=True))
     first = sim.step(skeleton(0))
     bad = sim.step(skeleton(.03, shift=.8))
-    assert len(bad.targets) == 2
-    for before, after in zip(first.targets, bad.targets):
-        assert after.preview and not after.active
-        assert after.center == pytest.approx(before.center)
+    assert not first.targets and not bad.targets
+    assert bad.display_joints['left_shoulder'].position == pytest.approx(first.skeleton.joints['left_shoulder'].position)
     assert bad.score == 0 and not bad.events
     expired = sim.step(SkeletonFrame(300, .3, {}))
     assert not expired.targets

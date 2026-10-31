@@ -49,7 +49,7 @@ class ArenaRenderer:
                 self.vis.add_geometry(self.geometries[name], reset_bounding_box=False)
             for name in ("nose", "fist_left", "fist_right", "target_0", "target_1"):
                 self._new_sphere(name)
-            for key, action in ((32, "pause"), (ord("R"), "reset"), (ord("Q"), "quit"), (256, "quit")):
+            for key, action in ((32, "pause"), (ord("C"), "capture_reach"), (ord("R"), "reset"), (ord("Q"), "quit"), (256, "quit")):
                 self.vis.register_key_callback(key, lambda vis, a=action: self._enqueue(a))
             control = self.vis.get_view_control()
             control.set_lookat([0, -.1, -1.7])

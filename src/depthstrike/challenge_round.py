@@ -12,8 +12,8 @@ from .types import HitEvent
 
 class ChallengeRound:
     def __init__(self, recipe, config):
-        if config.interaction_mode != "guided":
-            raise ValueError("Motion challenges require guided calibration")
+        if config.interaction_mode not in ("direct", "guided"):
+            raise ValueError("Motion challenges require direct or guided interaction")
         if recipe.duration_s > config.round_duration_s:
             raise ValueError("Challenge is longer than round_duration_s; select a suitable configuration")
         self.recipe, self.config = recipe, config
@@ -58,7 +58,13 @@ class ChallengeRound:
         old_elapsed = self.elapsed
         self.elapsed = float(elapsed)
         if not self.targets and valid:
-            self.targets = self.recipe.map_targets(profile, self.config, fists)
+            neutral = fists
+            if self.config.interaction_mode == "direct":
+                # Starting with an extended hand is allowed. Mapping uses the
+                # preset guard, rather than asking the player to hold a pose.
+                neutral = {h: replace(fists[h], position=p+(0, self.config.target_height_m,
+                           -profile.neutral_extensions[h])) for h, p in profile.reference_shoulders.items()}
+            self.targets = self.recipe.map_targets(profile, self.config, neutral)
             self.profile = profile
             for row, target in zip(self._rows, self.targets):
                 row.update(target_center_m=target.center.tolist(), target_radius_m=target.radius)
@@ -187,6 +193,7 @@ class ChallengeRound:
             "source_metadata": metadata or {}, "challenge": self.recipe.to_dict(), "config": self.config.to_dict(),
             "scope": "derived_challenge_and_local_geometry_not_independent_accuracy_or_professional_coaching",
             "player_calibration": None if self.profile is None else {
+                "reference_kind": "automatic_preset" if self.config.interaction_mode == "direct" else "measured_reach",
                 "reference_shoulders_m": {h: p.tolist() for h, p in self.profile.reference_shoulders.items()},
                 "comfortable_extensions_m": dict(self.profile.comfortable_extensions),
                 "guard_thresholds_m": dict(self.profile.guard_thresholds),

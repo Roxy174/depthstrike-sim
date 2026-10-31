@@ -21,7 +21,8 @@ def run_session(source, simulation, view, recorder=None, max_frames=None, *,
                 rgbd_recorder=None, realtime=False, clock=time.monotonic, metrics=None) -> SessionSummary:
     started = last_success = clock()
     count = timeouts = 0
-    state = SceneState(None, (), 0, 0, simulation.config.round_duration_s, (), "CALIBRATING")
+    initial_status = "WAITING FOR PLAYER" if simulation.config.interaction_mode == "direct" else "CALIBRATING"
+    state = SceneState(None, (), 0, 0, simulation.config.round_duration_s, (), initial_status)
     pending = []
     first_t = first_wall = None
     termination = "frame_limit"
@@ -34,6 +35,7 @@ def run_session(source, simulation, view, recorder=None, max_frames=None, *,
             if action == "pause": simulation.set_paused(not simulation.paused)
             elif action == "reset": simulation.reset()
             elif action == "tracking_lost": simulation.invalidate_tracking()
+            elif action == "capture_reach": simulation.request_reach_capture()
             if hasattr(source, "handle_action"):
                 source.handle_action(action, paused=simulation.paused)
 
@@ -92,7 +94,8 @@ def run_session(source, simulation, view, recorder=None, max_frames=None, *,
                 apply(replay_actions)
                 pending.extend(replay_actions)
                 rgbd = getattr(source, "last_rgbd", None)
-                if simulation.config.spatial_layout and rgbd is not None:
+                if (simulation.config.interaction_mode == "guided" and
+                        simulation.config.spatial_layout and rgbd is not None):
                     from .spatial import DepthWorkspace
                     simulation.set_workspace(DepthWorkspace(rgbd))
                 with span("simulation"):

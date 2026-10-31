@@ -1,6 +1,6 @@
 # DepthStrike · 深度拳击
 
-基于 RGB-D 人体追踪的三维击球交互项目，使用 Python、MediaPipe、OpenCV 和 Open3D。当前支持引导校准、左右交替击球、轨迹录制回放及动作关卡复盘。
+基于 RGB-D 人体追踪的三维击球交互项目，使用 Python、MediaPipe、OpenCV 和 Open3D。识别到人物后直接开始左右交替击球，支持轨迹录制回放及动作关卡复盘。
 
 ## 快速运行
 
@@ -11,7 +11,7 @@ $py = "$env:USERPROFILE\.conda\envs\depthstrike\python.exe"
 & $py -m depthstrike --source astra-camera --config configs/adaptive.json
 ```
 
-不连接相机时，可运行自动完成校准和击球的合成演示：
+不连接相机时，可运行自动击球的合成演示：
 
 ```powershell
 & $py -m depthstrike --source demo --config configs/adaptive.json
@@ -21,15 +21,15 @@ $py = "$env:USERPROFILE\.conda\envs\depthstrike\python.exe"
 
 ## 操作
 
-校准顺序：收拳准备 → 左手前伸并收回 → 右手前伸并收回 → 左右试击 → 倒计时 → 正式回合。
+默认已取消校准：双肩被识别后自动放置目标，手腕追踪有效即可进入回合，无需前伸保持、左右试击或倒计时。目标固定在初始肩部前方约 38 厘米，蓝色代表左手，橙色代表右手。
 
 | 按键 | 功能 |
 | --- | --- |
 | 空格 | 暂停／继续 |
-| R | 清分并重新校准 |
+| R | 清分、重新开始并按当前肩部位置放置目标 |
 | Q / Esc | 退出并释放相机 |
 
-保持单人正面、双肩双肘双手入镜；改变站位或移动相机后重新校准。蓝色代表左手，橙色代表右手，命中依据三维空间接触和有效出拳条件。
+保持单人正面、双肩和双手入镜；先收拳，再朝目标交替出拳。改变站位或移动相机后按 `R`。命中依据三维空间接触和有效出拳条件。
 
 ## 文档
 

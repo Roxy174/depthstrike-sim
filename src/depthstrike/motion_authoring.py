@@ -1,4 +1,4 @@
-"""Extract completed, observed straight punches from a guided pose recording."""
+"""Extract completed, observed straight punches from a pose recording."""
 import numpy as np
 
 from .boxing import BoxingSimulation
@@ -15,8 +15,8 @@ def author_recording(input_path):
     discarded = count = 0
     with PoseReplaySource(input_path) as source:
         config = source.config
-        if config.interaction_mode != "guided":
-            raise ValueError("Authoring requires a guided recording including reach calibration")
+        if config.interaction_mode not in ("direct", "guided"):
+            raise ValueError("Authoring requires a direct or guided recording")
         simulation = BoxingSimulation(config)
         while (frame := source.read()) is not None:
             count += 1
@@ -24,6 +24,9 @@ def author_recording(input_path):
             interrupted = last_t is not None and frame.timestamp_s-last_t > config.max_track_gap_s + 1e-9
             last_t = frame.timestamp_s
             for action in source.actions:
+                if action == "capture_reach":
+                    simulation.request_reach_capture()
+                    continue
                 interrupted = True
                 if action == "reset":
                     if profile is not None:
@@ -40,13 +43,13 @@ def author_recording(input_path):
                 discarded += len(pending)
                 pending.clear()
             previous_sources = sources
-            if (state.status != "RUNNING" or state.guidance.stage != "RUNNING"
+            if (state.status != "RUNNING" or (state.guidance is not None and state.guidance.stage != "RUNNING")
                     or not valid_body(state.skeleton, state.fists, config)):
                 discarded += len(pending)
                 pending.clear()
                 continue
             if profile is None:
-                profile = state.guidance.profile
+                profile = simulation.calibration.profile
             elapsed = config.round_duration_s-state.remaining_s
             for hand in ("left", "right"):
                 if state.phases[hand] == "ATTACKING":
@@ -60,7 +63,7 @@ def author_recording(input_path):
         discarded += len(pending)
         metadata = source.metadata
     if profile is None or not completed:
-        raise ValueError("Recording needs calibration and at least one completed formal punch")
+        raise ValueError("Recording needs an observed player and at least one completed formal punch")
     width = float(np.linalg.norm(profile.reference_shoulders["right"]-profile.reference_shoulders["left"]))
     if width <= .02: raise ValueError("Demonstration shoulder width is too small")
     completed.sort(key=lambda row: row["at_s"])
@@ -83,6 +86,6 @@ def author_recording(input_path):
                    "recording_metadata": metadata},
         "author_scale": {"shoulder_width_m": width,
                          "comfortable_extensions_m": dict(profile.comfortable_extensions)},
-        "extraction": {"method": "completed_guided_straight_punch_peak_v1", "frame_count": count,
+        "extraction": {"method": f"completed_{config.interaction_mode}_straight_punch_peak_v1", "frame_count": count,
                        "discarded_incomplete": discarded, "labels": "derived_content_not_independent_truth"},
         "cues": cues})

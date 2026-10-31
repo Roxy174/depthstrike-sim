@@ -20,6 +20,13 @@ def estimate_fist(elbow: Joint3D | None, wrist: Joint3D | None, config: AppConfi
 
 
 def estimate_hand(joints, hand, config):
+    if config.fist_mode == "wrist":
+        wrist = joints.get(f"{hand}_wrist")
+        if wrist is None or not wrist.is_observed:
+            return Joint3D(None, invalid_reason=(wrist.invalid_reason if wrist else None) or "missing_joint")
+        if wrist.confidence < config.confidence_threshold:
+            return Joint3D(None, invalid_reason="low_confidence")
+        return wrist
     if config.fist_mode == "hand":
         wrist, index, pinky = (joints.get(f"{hand}_{p}") for p in ("wrist", "index", "pinky"))
         if all(j is not None and j.is_observed and j.confidence >= config.confidence_threshold

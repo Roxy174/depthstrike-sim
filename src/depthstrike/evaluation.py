@@ -234,6 +234,8 @@ def evaluate_frames(frames, manifest: EvaluationManifest, config: AppConfig) -> 
                        for n, j in frame.joints.items()},
             "actions": list(actions)}))
         for action in actions:
+            if action == "capture_reach":
+                continue  # Calibration confirmation does not change fixed evaluation targets.
             if action == "pause": paused = not paused
             elif action == "reset": paused = False
             elif action != "tracking_lost": raise ValueError("Unsupported evaluation control action")

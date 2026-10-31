@@ -16,7 +16,8 @@ REVIEW_TITLE = "深度拳击｜动作复盘"
 
 HANDS = {"left": "左手", "right": "右手"}
 STATUSES = {"CALIBRATING": "引导校准", "RUNNING": "正式回合", "PAUSED": "已暂停",
-            "FINISHED": "回合结束", "TRACKING LOST": "追踪中断", "WAITING FOR CAMERA": "等待相机"}
+            "FINISHED": "回合结束", "TRACKING LOST": "追踪中断", "WAITING FOR CAMERA": "等待相机",
+            "WAITING FOR PLAYER": "等待人物入镜", "ADJUST DISTANCE": "请调整距离"}
 STAGES = {"HOLD_GUARD": "收拳准备", "REACH_LEFT": "左手前伸", "RETURN_LEFT": "左手收回",
           "REACH_RIGHT": "右手前伸", "RETURN_RIGHT": "右手收回", "PRACTICE_LEFT": "左手试击",
           "PRACTICE_RIGHT": "右手试击", "COUNTDOWN": "开始倒计时", **STATUSES}

@@ -12,7 +12,7 @@ from .config import AppConfig
 from .types import HitEvent, Intrinsics, Joint3D, RGBDFrame, SkeletonFrame
 
 COORDINATES = "camera_x_right_y_down_z_forward"
-ACTIONS = {"pause", "reset", "tracking_lost"}
+ACTIONS = {"pause", "reset", "tracking_lost", "capture_reach"}
 
 
 def _dump(value):
