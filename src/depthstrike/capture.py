@@ -1,11 +1,10 @@
 """Gemini RGB-D acquisition using software D2C, with no import-time SDK load."""
 from __future__ import annotations
 
-import importlib
-
 import numpy as np
 
 from .config import AppConfig
+from .camera_selection import gemini_indices, load_orbbec_sdk
 from .types import DepthStrikeError, FrameTimeout, Intrinsics, RGBDFrame
 
 
@@ -66,6 +65,32 @@ def convert_frames(color, depth, frame_id: int, config: AppConfig) -> RGBDFrame:
                      _intrinsics(color.get_stream_profile(), config.legacy_sdk_distortion_model))
 
 
+def select_color_profile(profiles, sdk):
+    # Prefer the small 30 fps grid used by the pose model, but accept the
+    # device's supported RGB/BGR/MJPG mode instead of assuming RGB exists.
+    for width, height, fps in ((640, 480, 30), (640, 480, 0), (0, 0, 30), (0, 0, 0)):
+        for name in ('RGB', 'BGR', 'MJPG'):
+            fmt = getattr(sdk.OBFormat, name, None)
+            if fmt is None:
+                continue
+            try:
+                return profiles.get_video_stream_profile(width, height, fmt, fps)
+            except Exception:
+                continue
+    raise DepthStrikeError('Gemini 2 has no supported RGB/BGR/MJPG color profile. Check USB 3 and SDK/firmware compatibility.')
+
+
+def select_depth_profile(profiles, sdk, fps):
+    fmt = getattr(sdk.OBFormat, 'Y16', None)
+    if fmt is not None:
+        for width, height in ((640, 480), (640, 400), (0, 0)):
+            try:
+                return profiles.get_video_stream_profile(width, height, fmt, fps)
+            except Exception:
+                continue
+    return profiles.get_default_video_stream_profile()
+
+
 class GeminiSource:
     def __init__(self, config: AppConfig, *, sdk=None):
         self.config = config
@@ -73,25 +98,28 @@ class GeminiSource:
         self._closed = False
         self._frame_id = 0
         self._last_t = -1.
-        self._description = {"source": "Gemini 2", "alignment": "software D2C", "unit": "m"}
+        self._description = {"source": "Gemini 2", "capture_backend": "orbbec_sdk_gemini2",
+            "alignment": "software D2C", "unit": "m", "evidence": "unverified",
+            "timestamp_source": "device_timestamp", "synchronization": "sdk_frame_sync_and_checked_pair_timestamps"}
         try:
-            self.sdk = sdk if sdk is not None else importlib.import_module("pyorbbecsdk")
+            self.sdk = sdk if sdk is not None else load_orbbec_sdk()
         except (ImportError, OSError) as exc:
             raise DepthStrikeError('Orbbec SDK unavailable; install: python -m pip install -e ".[camera]"; check Windows VC++ runtime') from exc
         try:
             self.context = self.sdk.Context()
             devices = self.context.query_devices()
-            if devices.get_count() == 0:
-                raise DepthStrikeError("No Orbbec camera found. Connect Gemini 2 via USB 3 and close Orbbec Viewer.")
-            self.pipeline = self.sdk.Pipeline()
+            matches = gemini_indices(devices)
+            if len(matches) != 1:
+                raise DepthStrikeError(f"Expected one Gemini 2 camera; found {len(matches)}. Connect Gemini 2 via USB 3 "
+                                      "and close Orbbec Viewer. For the legacy Astra use --source astra-camera.")
+            self.device = devices.get_device_by_index(matches[0])
+            self.pipeline = self.sdk.Pipeline(self.device)
             stream_config = self.sdk.Config()
             colors = self.pipeline.get_stream_profile_list(self.sdk.OBSensorType.COLOR_SENSOR)
-            try:
-                color_profile = colors.get_video_stream_profile(640, 480, self.sdk.OBFormat.RGB, 30)
-            except Exception:
-                color_profile = colors.get_video_stream_profile(0, 0, self.sdk.OBFormat.RGB, 0)
+            color_profile = select_color_profile(colors, self.sdk)
             depths = self.pipeline.get_stream_profile_list(self.sdk.OBSensorType.DEPTH_SENSOR)
-            depth_profile = depths.get_default_video_stream_profile()
+            fps = color_profile.get_fps() if hasattr(color_profile, 'get_fps') else 30
+            depth_profile = select_depth_profile(depths, self.sdk, fps)
             stream_config.enable_stream(color_profile)
             stream_config.enable_stream(depth_profile)
             stream_config.set_frame_aggregate_output_mode(self.sdk.OBFrameAggregateOutputMode.FULL_FRAME_REQUIRE)
@@ -99,12 +127,11 @@ class GeminiSource:
             self.align_filter = self.sdk.AlignFilter(align_to_stream=self.sdk.OBStreamType.COLOR_STREAM)
             self.pipeline.start(stream_config)
             self._description.update(color_profile=str(color_profile), depth_profile=str(depth_profile))
-            if hasattr(self.pipeline, "get_device"):
-                info = self.pipeline.get_device().get_device_info()
-                self._description.update(name=info.get_name(), firmware=info.get_firmware_version())
-        except Exception as exc:
+            info = self.device.get_device_info()
+            self._description.update(name=info.get_name(), firmware=info.get_firmware_version())
+        except BaseException as exc:
             self.close()
-            if isinstance(exc, DepthStrikeError):
+            if not isinstance(exc, Exception) or isinstance(exc, DepthStrikeError):
                 raise
             raise DepthStrikeError(f"Gemini RGB-D start failed: {exc}. Check USB, Viewer ownership, SDK/firmware compatibility.") from exc
 

@@ -4,12 +4,14 @@
 
 ## 快速运行
 
-在项目根目录打开 PowerShell，使用本机已有的 `depthstrike` 环境启动 Astra：
+在项目根目录打开 PowerShell，使用本机已有的 `depthstrike` 环境启动已连接的 Gemini 2 或 Astra：
 
 ```powershell
 $py = "$env:USERPROFILE\.conda\envs\depthstrike\python.exe"
-& $py -m depthstrike --source astra-camera --config configs/adaptive.json
+& $py -m depthstrike --source auto-camera --config configs/adaptive.json
 ```
+
+自动入口每轮使用一台相机。两种设备同时连接时，用 `--source gemini-camera` 或 `--source astra-camera` 指定；`--list-cameras` 只列出设备，不开始采集。更换设备后重新启动即可，仍无需校准。
 
 不连接相机时，可运行自动击球的合成演示：
 
@@ -33,7 +35,7 @@ $py = "$env:USERPROFILE\.conda\envs\depthstrike\python.exe"
 
 ## 文档
 
-- [运行说明](docs/RUNNING.md)：环境、Astra、录制回放、动作复盘和常见问题。
+- [运行说明](docs/RUNNING.md)：环境、Gemini 2／Astra、录制回放、动作复盘和常见问题。
 - [开发与测试](docs/DEVELOPMENT.md)：模块、配置、测试、对比实验及当前验证状态。
 - [第三方依赖](docs/THIRD_PARTY.md)：SDK、模型、字体和依赖来源。
 

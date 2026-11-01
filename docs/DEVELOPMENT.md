@@ -8,7 +8,7 @@
 
 | 模块 | 职责 |
 | --- | --- |
-| `capture.py` / `astra_capture.py` / `openni_capture.py` / `opencv_capture.py` | 各采集后端与标定 |
+| `camera_selection.py` / `capture.py` / `astra_capture.py` / `openni_capture.py` / `opencv_capture.py` | 设备选择、各采集后端与标定 |
 | `pose.py` / `fusion.py` / `tracking.py` | MediaPipe、人体掩膜、深度融合及轨迹处理 |
 | `automatic_layout.py` / `interaction.py` / `calibration.py` | 自动放置目标、手部代理与旧 guided 录制兼容 |
 | `geometry.py` / `boxing.py` / `feedback.py` | 三维碰撞、出拳状态、回合和空间反馈 |
@@ -29,6 +29,12 @@
 
 骨架 JSONL v2 保存原始关节、配置、无效原因、操作和事件；回放重新计算结果。v1 缺少新配置时采用 legacy 语义。RGB-D 记录另保存图像、深度、完整标定与上游来源；回放重新执行模型。读取检查路径、数组类型、尺寸及实际字节数，不使用 pickle。
 
+## 相机适配
+
+`auto-camera` 通过 SDK 名称识别 Gemini 2，通过 USB `2bc5:050f` 识别旧款 Astra 彩色接口；两者都在线或同型号多台时拒绝隐式选择。Gemini 使用枚举到的设备创建 Pipeline，避免默认设备变化；Astra 继续由 OpenNI 验证 `2bc5:060f` 深度设备。
+
+Gemini 2 协商 RGB／BGR／MJPG 彩色格式及可用深度分辨率，保留单位换算、设备时间戳、原始帧同步检查与软件对齐。各后端元数据经骨架、RGB-D 录制和回放保留，界面据实际来源显示采集方式。Astra 的主机读取时差仍不代表曝光同步。
+
 ## 配置
 
 JSON 可只覆盖需要的字段；运行时缺省使用 direct、腕点代理和局部追踪。`AppConfig()` 保留历史 guided 默认值，供旧录制及解析演示兼容；旧录制不经运行时缺省配置重写。完整字段与校验见 [config.py](../src/depthstrike/config.py)。
@@ -36,7 +42,7 @@ JSON 可只覆盖需要的字段；运行时缺省使用 direct、腕点代理�
 | 配置 | 用途 |
 | --- | --- |
 | [default.json](../configs/default.json) | 无需校准的直接回合 |
-| [adaptive.json](../configs/adaptive.json) | 直接回合、掩膜融合、One Euro 和跳变抑制，推荐用于本机 Astra |
+| [adaptive.json](../configs/adaptive.json) | 直接回合、掩膜融合、One Euro 和跳变抑制，共用于 Gemini 2 和本机 Astra |
 | [legacy.json](../configs/legacy.json) | 原手腕代理、固定目标及旧记录兼容 |
 
 adaptive 的主要规则：
@@ -94,8 +100,8 @@ $testTemp = Join-Path (Get-Location) ("tmp/pytest-" + [guid]::NewGuid().ToString
 
 ## 当前验证状态
 
-最近一次完整回归为 **2026-10-31，412 项通过，含真实窗口测试**。本轮取消默认校准流程，覆盖直接启动、首次前伸不计分、丢点与暂停冻结时间、重置目标、中文界面及录制回放／关卡兼容。
+最近一次完整回归为 **2026-11-01，438 项通过，含真实窗口测试**。覆盖双相机发现与选择、Gemini 2 明确绑定设备、格式协商、米制深度与设备时钟、录制回放兼容，以及原生 SDK 日志与 JSON 输出分离。实际 `--list-cameras` 输出也已通过 JSON 解析检查。
 
-Astra 已有实机读帧记录；取消校准后的真人击球体验仍待复测。出厂配准精度、独立接口曝光同步、真实三维定位精度和端到端延迟未独立验收。
+Astra 已有实机读帧记录。本轮连接检查中，SDK 与 Windows 摄像头枚举均未发现在线 Gemini 2 或 Astra，Gemini 2 实机读帧及两种设备的切换体验仍待连接后复测。出厂配准精度、独立接口曝光同步、真实三维定位精度和端到端延迟未独立验收。
 
 旧方案、审查结论及历次设备状态统一保存在 [历史档案](archive/HISTORY.md)，不再逐阶段维护独立说明文件。模型、原始人像、SDK 安装包和本地输出继续由 `.gitignore` 排除，第三方来源见 [依赖说明](THIRD_PARTY.md)。

@@ -54,7 +54,7 @@ def test_main_pages_translate_states_sources_guidance_and_unknown_codes(monkeypa
     base = BoxingSimulation(config).step(skeleton(0))
     target = Target(0, "left", np.array((-.2, .04, 1.5)), .08, True)
     for status in ("CALIBRATING", "RUNNING", "PAUSED", "FINISHED", "TRACKING LOST", "WAITING FOR CAMERA", "FUTURE_STATUS"):
-        for mode in ("demo", "camera", "replay", "rgbd-replay", "opencv-experience", "astra-experience"):
+        for mode in ("demo", "camera", "auto-camera", "gemini-camera", "replay", "rgbd-replay", "opencv-experience", "astra-experience"):
             state = replace(base, status=status, targets=(target,),
                 phases={"left":"ATTACKING", "right":"RECOVERING"},
                 feedback={"left":HandFeedback("future_reason_code", .12, .22, .03)})

@@ -119,9 +119,12 @@ def sdk_boundary(fail_start=False):
         def stop(self): self.stopped = True
         def wait_for_frames(self, timeout): return None
     pipeline = Pipeline()
+    info = SimpleNamespace(get_name=lambda: 'Orbbec Gemini 2', get_firmware_version=lambda: 'test-firmware')
+    device = SimpleNamespace(get_device_info=lambda: info)
     sdk = SimpleNamespace(
-        Context=lambda: SimpleNamespace(query_devices=lambda: SimpleNamespace(get_count=lambda: 1)),
-        Pipeline=lambda: pipeline,
+        Context=lambda: SimpleNamespace(query_devices=lambda: SimpleNamespace(get_count=lambda: 1,
+            get_device_name_by_index=lambda i: 'Orbbec Gemini 2', get_device_by_index=lambda i: device)),
+        Pipeline=lambda selected_device: pipeline,
         Config=lambda: SimpleNamespace(enable_stream=lambda p: None, set_frame_aggregate_output_mode=lambda m: None),
         OBFormat=SimpleNamespace(RGB="RGB"),
         OBSensorType=SimpleNamespace(COLOR_SENSOR=1, DEPTH_SENSOR=2),
@@ -144,6 +147,97 @@ def test_partial_start_failure_releases_pipeline():
     from depthstrike.capture import GeminiSource
     sdk, pipeline = sdk_boundary(fail_start=True)
     with pytest.raises(DepthStrikeError, match="busy"):
+        GeminiSource(AppConfig(), sdk=sdk)
+    assert pipeline.stopped
+
+
+def test_gemini_binds_the_matching_device_in_a_mixed_sdk_list():
+    from depthstrike.capture import GeminiSource
+    sdk, pipeline = sdk_boundary()
+    names = ('Astra 2', 'Orbbec Gemini 2')
+    device = SimpleNamespace(get_device_info=lambda: SimpleNamespace(
+        get_name=lambda: names[1], get_firmware_version=lambda: '1.4.98'))
+    sdk.Context = lambda: SimpleNamespace(query_devices=lambda: SimpleNamespace(get_count=lambda: 2,
+        get_device_name_by_index=lambda i: names[i], get_device_by_index=lambda i: device if i == 1 else pytest.fail('Wrong device')))
+    bound = []
+    sdk.Pipeline = lambda selected: bound.append(selected) or pipeline
+    with GeminiSource(AppConfig(), sdk=sdk) as capture:
+        assert bound == [device]
+        assert capture.describe()['capture_backend'] == 'orbbec_sdk_gemini2'
+        assert capture.describe()['firmware'] == '1.4.98'
+
+
+@pytest.mark.parametrize('names', [('Astra 2',), ('Gemini 2', 'Gemini 2')])
+def test_gemini_never_opens_an_unrelated_or_ambiguous_device(names):
+    from depthstrike.capture import GeminiSource
+    sdk, pipeline = sdk_boundary()
+    sdk.Context = lambda: SimpleNamespace(query_devices=lambda: SimpleNamespace(get_count=lambda: len(names),
+        get_device_name_by_index=lambda i: names[i]))
+    sdk.Pipeline = lambda *args: pytest.fail('Do not open an unrelated or ambiguous device')
+    with pytest.raises(DepthStrikeError, match='Expected one Gemini 2'):
+        GeminiSource(AppConfig(), sdk=sdk)
+
+
+def test_gemini_color_negotiation_accepts_mjpg_when_rgb_is_not_available():
+    from depthstrike.capture import select_color_profile
+    sdk = SimpleNamespace(OBFormat=SimpleNamespace(RGB='RGB', BGR='BGR', MJPG='MJPG'))
+    tried, profile = [], object()
+    def select(width, height, fmt, fps):
+        tried.append((width, height, fmt, fps))
+        if (width, height, fmt, fps) == (640, 480, 'MJPG', 30): return profile
+        raise RuntimeError('Unsupported profile')
+    assert select_color_profile(SimpleNamespace(get_video_stream_profile=select), sdk) is profile
+    assert tried[-1] == (640, 480, 'MJPG', 30)
+
+
+def test_gemini_color_negotiation_uses_device_supported_grid_without_fabricating_a_profile():
+    from depthstrike.capture import select_color_profile
+    sdk = SimpleNamespace(OBFormat=SimpleNamespace(RGB='RGB'))
+    def select(w, h, fmt, fps):
+        if (w, h, fps) == (0, 0, 30): return 'actual-supported-profile'
+        raise RuntimeError('No 640x480')
+    assert select_color_profile(SimpleNamespace(get_video_stream_profile=select), sdk) == 'actual-supported-profile'
+    with pytest.raises(DepthStrikeError, match='no supported'):
+        select_color_profile(SimpleNamespace(get_video_stream_profile=lambda *a: (_ for _ in ()).throw(RuntimeError())), sdk)
+
+
+def test_gemini_depth_negotiation_matches_color_fps_and_accepts_640x400():
+    from depthstrike.capture import select_depth_profile
+    sdk = SimpleNamespace(OBFormat=SimpleNamespace(Y16='Y16'))
+    def select(w, h, fmt, fps):
+        if (w, h, fmt, fps) == (640, 400, 'Y16', 30): return 'depth-profile'
+        raise RuntimeError('Unsupported profile')
+    assert select_depth_profile(SimpleNamespace(get_video_stream_profile=select), sdk, 30) == 'depth-profile'
+
+
+def test_gemini_stream_preserves_depth_scale_calibration_and_device_clock():
+    from depthstrike.capture import GeminiSource
+    sdk, pipeline = sdk_boundary()
+    color = VideoFrame(np.full((3, 4, 3), (10, 20, 30), np.uint8))
+    depth = VideoFrame(np.full((3, 4), 4000, np.uint16), 'Y16', scale=.5)
+    frames = SimpleNamespace(get_color_frame=lambda: color, get_depth_frame=lambda: depth)
+    frames.as_frame_set = lambda: frames
+    pipeline.wait_for_frames = lambda timeout: frames
+    with GeminiSource(AppConfig(), sdk=sdk) as source:
+        frame = source.read()
+        assert frame.frame_id == 0 and frame.timestamp_s == 1.
+        assert frame.depth_m == pytest.approx(np.full((3, 4), 2.))
+        assert tuple(frame.color_rgb[0, 0]) == (10, 20, 30)
+        assert frame.intrinsics.fx == 6. and frame.intrinsics.distortion_model == 'none'
+        with pytest.raises(FrameTimeout, match='Repeated'):
+            source.read()
+        color.timestamp = depth.timestamp = 1100.
+        assert source.read().frame_id == 1
+        assert source.describe()['timestamp_source'] == 'device_timestamp'
+    assert pipeline.stopped
+
+
+def test_gemini_interrupted_start_releases_pipeline():
+    from depthstrike.capture import GeminiSource
+    sdk, pipeline = sdk_boundary()
+    def interrupt(config): raise KeyboardInterrupt()
+    pipeline.start = interrupt
+    with pytest.raises(KeyboardInterrupt):
         GeminiSource(AppConfig(), sdk=sdk)
     assert pipeline.stopped
 

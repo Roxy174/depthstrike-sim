@@ -10,19 +10,38 @@
 $py = "$env:USERPROFILE\.conda\envs\depthstrike\python.exe"
 ```
 
-新电脑可建立独立环境，安装图形界面与 Astra 依赖：
+新电脑可建立独立环境，安装图形界面及两种相机的依赖：
 
 ```powershell
 python -m venv .venv
 $py = (Resolve-Path .venv\Scripts\python.exe).Path
-& $py -m pip install -e ".[dev,display,astra]"
+& $py -m pip install -e ".[dev,display,camera,astra]"
 & $py -m pip check
 & $py scripts/download_pose_model.py
 ```
 
-模型仅在缺失时下载，已有模型及来源文件不会覆盖。依赖版本统一见 [pyproject.toml](../pyproject.toml)。仅做无窗口合成演示和规则测试可安装 `.[dev]`；Gemini SDK 采集另安装 `.[camera]`。
+模型仅在缺失时下载，已有模型及来源文件不会覆盖。依赖版本统一见 [pyproject.toml](../pyproject.toml)。仅做无窗口合成演示和规则测试可安装 `.[dev]`；单独使用 Gemini 2 可安装 `.[camera]`，单独使用 Astra 可安装 `.[astra]`。本机已具备这两组 Python 依赖。
 
 界面默认中文。Windows 使用微软雅黑或黑体；其他系统安装中文字体，或设置 `DEPTHSTRIKE_FONT` 为字体文件路径。
+
+## 摄像头选择
+
+更换 Gemini 2 或旧款 Astra 后，关闭旧程序，使用同一入口重新启动：
+
+```powershell
+& $py -m depthstrike --source auto-camera --config configs/adaptive.json
+```
+
+| 选择 | 参数 | 采集方式 |
+| --- | --- | --- |
+| 自动识别 | `--source auto-camera` | 只选择唯一在线的受支持设备，不使用内置摄像头 |
+| Gemini 2 | `--source gemini-camera` | Orbbec SDK、设备时间戳、软件深度到彩色对齐 |
+| 旧款 Astra | `--source astra-camera` | OpenNI 深度及指定 USB 彩色接口 |
+| 只检查连接 | `--list-cameras` | 列出受支持设备和依赖诊断，不启动视频流 |
+
+两种相机同时连接时需要指定型号；同型号多台时只连接准备使用的一台。`--source camera` 保留为 Gemini 2 入口的兼容别名。`adaptive.json` 可共用于两种相机，均无需动作校准；RGB-D 单位和计分规则一致，设备标定及时间来源分别保留。
+
+Gemini 2 优先请求 640×480／30 fps 彩色流，支持 RGB、BGR、MJPG；深度选择设备支持的分辨率，优先匹配彩色帧率，再由 SDK 对齐到彩色网格。SDK 与固件要求见 [官方兼容表](https://orbbec.github.io/pyorbbecsdk/source/1_overview/Introduction.html)。本程序不安装驱动或升级固件。
 
 ## Astra 摄像头
 
@@ -55,7 +74,7 @@ $py = (Resolve-Path .venv\Scripts\python.exe).Path
 & $py -m depthstrike --source demo --headless --frames 600
 ```
 
-演示使用合成骨架，不读取相机。默认启动、`default.json` 和本机 Astra 使用的 `adaptive.json` 均直接进入回合。
+演示使用合成骨架，不读取相机。默认启动、`default.json` 和两种相机共用的 `adaptive.json` 均直接进入回合。
 
 无需前伸保持、收回确认、试击或倒计时。检测到有效双肩后，程序自动在初始肩部前方约 38 厘米放置目标，并固定到本轮结束。手腕有效时可以直接收拳、出拳击球；追踪中断时暂停计时与计分，恢复后继续。
 
@@ -69,12 +88,11 @@ $py = (Resolve-Path .venv\Scripts\python.exe).Path
 
 | 输入 | 命令参数 | 用途 |
 | --- | --- | --- |
-| Gemini SDK | `--source camera` | 使用设备时间戳、标定及软件对齐；需 `.[camera]` |
 | OpenCV 体验 | `--source opencv-camera` | 主机计时、近似内参；不作为同步或精度验证 |
 | 骨架回放 | `--source replay --input FILE.jsonl` | 按录制配置重算交互与计分，无需相机 |
 | 彩色与深度回放 | `--source rgbd-replay --input DIRECTORY` | 重新执行姿态检测和深度融合；需 MediaPipe |
 
-Gemini SDK 若报告零设备时间戳，需按 SDK 官方说明注册 UVC 元数据并重新插拔设备；这涉及系统设置。旧的排查过程保留在 [相机检查记录](archive/HISTORY.md#docs-camera-smoke-2026-10-23-md)。采集失败会明确报错。
+Gemini SDK 若报告零设备时间戳，需按 [SDK 官方 Windows 元数据说明](https://github.com/orbbec/OrbbecSDK_v2/blob/main/scripts/env_setup/obsensor_metadata_win10.md) 注册并重新插拔设备；程序会明确报错，保留设备时间戳检查。旧的排查过程保留在 [相机检查记录](archive/HISTORY.md#docs-camera-smoke-2026-10-23-md)。采集失败会明确报错。
 
 ## 录制与回放
 
@@ -83,7 +101,7 @@ Gemini SDK 若报告零设备时间戳，需按 SDK 官方说明注册 UVC 元�
 ```powershell
 & $py -m depthstrike --source demo --headless --frames 600 --record recordings/demo.jsonl
 & $py -m depthstrike --source replay --input recordings/demo.jsonl
-& $py -m depthstrike --source astra-camera --config configs/adaptive.json --record recordings/pose.jsonl --record-rgbd recordings/rgbd
+& $py -m depthstrike --source auto-camera --config configs/adaptive.json --record recordings/pose.jsonl --record-rgbd recordings/rgbd
 & $py -m depthstrike --source rgbd-replay --input recordings/rgbd
 ```
 
@@ -123,6 +141,7 @@ Gemini SDK 若报告零设备时间戳，需按 SDK 官方说明注册 UVC 元�
 
 | 现象 | 处理 |
 | --- | --- |
+| 未发现 Gemini 2 或 Astra | 用 `--list-cameras` 检查连接；确认供电、USB 数据线、设备管理器及 SDK／运行库，关闭占用设备的程序 |
 | 找到 0 个 Astra 深度设备 | 检查 USB、供电和驱动，确认设备管理器中 `ORBBEC Depth Sensor` 在线，关闭占用相机的程序 |
 | 骨架或目标跳动 | 使用 `configs/adaptive.json`；保持光照和单人正面取景，双肩和双手入镜；移动后按 `R` |
 | 启动后没有目标 | 让双肩进入画面；若提示调整距离，请向后移动一些。默认不需要校准 |

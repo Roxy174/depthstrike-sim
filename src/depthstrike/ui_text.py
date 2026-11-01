@@ -23,7 +23,8 @@ STAGES = {"HOLD_GUARD": "收拳准备", "REACH_LEFT": "左手前伸", "RETURN_LE
           "PRACTICE_RIGHT": "右手试击", "COUNTDOWN": "开始倒计时", **STATUSES}
 PHASES = {"READY": "准备就绪", "ATTACKING": "出拳中", "RECOVERING": "收拳复位",
           "unavailable": "暂不可用"}
-SOURCES = {"demo": "合成演示", "camera": "深度相机", "opencv-camera": "奥比中光相机体验",
+SOURCES = {"demo": "合成演示", "camera": "双目深度相机", "gemini-camera": "奥比中光双目相机",
+           "auto-camera": "自动选择相机", "opencv-camera": "奥比中光相机体验",
            "opencv-experience": "奥比中光相机体验", "astra-camera": "奥比中光相机",
            "astra-experience": "奥比中光相机体验", "replay": "骨架回放", "rgbd-replay": "彩色与深度回放"}
 EVIDENCE = {"synthetic": "合成内容", "recorded": "录制内容", "unverified": "未验证内容"}

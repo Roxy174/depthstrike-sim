@@ -10,6 +10,7 @@ from . import __version__
 from .app import run_session
 from .astra_capture import AstraSource
 from .boxing import BoxingSimulation
+from .camera_selection import AutoCameraSource, discover_cameras
 from .config import load_config
 from .metrics import StageMetrics
 from .motion_challenge import ChallengeRecipe, file_sha256, write_json_exclusive
@@ -18,6 +19,8 @@ from .recording import PoseRecorder, PoseReplaySource, RGBDRecorder, RGBDReplayS
 from .sources import CameraPoseSource, DemoPoseSource
 from .types import DepthStrikeError
 from .visualization import NullView, SceneView
+
+LIVE_SOURCES = ("camera", "gemini-camera", "auto-camera", "opencv-camera", "astra-camera")
 
 
 def _opencv_experience_origin(metadata):
@@ -38,9 +41,19 @@ def _astra_experience_origin(metadata):
     return False
 
 
+def _gemini_origin(metadata):
+    seen = set()
+    while isinstance(metadata, dict) and id(metadata) not in seen:
+        if metadata.get("capture_backend") == "orbbec_sdk_gemini2": return True
+        seen.add(id(metadata))
+        metadata = metadata.get("recording_metadata")
+    return False
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="DepthStrike: RGB-D skeleton-guided target boxing")
-    parser.add_argument("--source", choices=("demo", "camera", "opencv-camera", "astra-camera", "replay", "rgbd-replay"), default="demo")
+    parser.add_argument("--source", choices=("demo", *LIVE_SOURCES, "replay", "rgbd-replay"), default="demo")
+    parser.add_argument("--list-cameras", action="store_true", help="list supported connected cameras without starting streams")
     parser.add_argument("--openni-dir", type=Path, help="Astra OpenNI2.dll directory; default: .cache/openni2")
     parser.add_argument("--input", type=Path, help="pose JSONL file or RGB-D recording directory")
     parser.add_argument("--headless", action="store_true")
@@ -55,6 +68,15 @@ def main(argv=None) -> int:
     parser.add_argument("--review-output", type=Path, help="new per-cue motion review JSON; requires --challenge")
     try:
         args = parser.parse_args(argv)
+        if args.list_cameras:
+            if (args.source != "demo" or any((args.input, args.config, args.record, args.record_rgbd,
+                    args.metrics, args.challenge, args.review_output, args.openni_dir,
+                    args.headless, args.sound)) or args.frames is not None or args.view != "overlay"):
+                parser.error("--list-cameras is a standalone command")
+            with redirect_stdout(sys.stderr):
+                inventory = discover_cameras()
+            print(json.dumps(inventory, ensure_ascii=False, allow_nan=False))
+            return 0
         if args.headless and args.sound: parser.error("--sound requires a display; remove --headless or --sound")
         outputs = [p.resolve() for p in (args.record, args.record_rgbd, args.metrics, args.review_output) if p is not None]
         if len(outputs) != len(set(outputs)): parser.error("Output paths must differ")
@@ -62,9 +84,9 @@ def main(argv=None) -> int:
         if args.challenge and args.challenge.resolve() in outputs: parser.error("Challenge input and output paths must differ")
         if args.frames is not None and args.frames <= 0: parser.error("--frames must be positive")
         if args.source in ("replay", "rgbd-replay") and args.input is None: parser.error("--input required for replay")
-        if args.source in ("camera", "opencv-camera", "astra-camera", "demo") and args.input is not None: parser.error("--input only applies to replay")
-        if args.openni_dir is not None and args.source != "astra-camera": parser.error("--openni-dir only applies to astra-camera")
-        if args.record_rgbd and args.source not in ("camera", "opencv-camera", "astra-camera", "rgbd-replay"): parser.error("--record-rgbd requires a camera or rgbd-replay")
+        if args.source in (*LIVE_SOURCES, "demo") and args.input is not None: parser.error("--input only applies to replay")
+        if args.openni_dir is not None and args.source not in ("astra-camera", "auto-camera"): parser.error("--openni-dir only applies to astra-camera or auto-camera")
+        if args.record_rgbd and args.source not in (*LIVE_SOURCES, "rgbd-replay"): parser.error("--record-rgbd requires a camera or rgbd-replay")
     except SystemExit as exc:
         return int(exc.code)
     metrics = None
@@ -97,18 +119,25 @@ def main(argv=None) -> int:
             elif args.source == "astra-camera":
                 capture = setup.enter_context(AstraSource(config, args.openni_dir))
                 source = setup.enter_context(CameraPoseSource(config, capture=capture, metrics=metrics))
+            elif args.source == "auto-camera":
+                with redirect_stdout(sys.stderr):
+                    capture = setup.enter_context(AutoCameraSource(config, args.openni_dir))
+                    source = setup.enter_context(CameraPoseSource(config, capture=capture, metrics=metrics))
             else:
                 with redirect_stdout(sys.stderr):
                     source = setup.enter_context(CameraPoseSource(config, metrics=metrics))
             simulation = BoxingSimulation(config, challenge=challenge)
             source_metadata = source.describe() if hasattr(source, "describe") else getattr(source, "metadata", {"source": args.source})
-            view_mode = args.source
+            view_mode = source_metadata.get("selected_camera_source", args.source)
             if _opencv_experience_origin(source_metadata):
                 view_mode = "opencv-experience"
                 print("OpenCV EXPERIENCE: host read time; RGB-D synchronization unverified; approximate pinhole geometry. Not a precision or latency evaluation.", file=sys.stderr)
             elif _astra_experience_origin(source_metadata):
                 view_mode = "astra-experience"
                 print("ASTRA EXPERIENCE: independent OpenNI depth and UVC color; host read time; exposure synchronization and spatial accuracy unverified.", file=sys.stderr)
+            elif _gemini_origin(source_metadata):
+                view_mode = "gemini-camera"
+                print("CAMERA: Gemini 2; SDK frame synchronization, software depth-to-color alignment and device timestamps.", file=sys.stderr)
             view = setup.enter_context(SceneView(config, view_mode, layout=args.view, sound=args.sound)) if not args.headless else NullView()
             metadata.update({"config": config.to_dict(), "source_metadata": source_metadata,
                              "evidence": source_metadata.get("evidence", "unverified"),
@@ -118,8 +147,8 @@ def main(argv=None) -> int:
             # From here run_session owns resources, including every failure path.
             setup.pop_all()
             summary = run_session(source, simulation, view, recorder,
-                args.frames if args.frames is not None else (600 if args.headless and args.source in ("demo", "camera", "opencv-camera", "astra-camera") else None),
-                rgbd_recorder=rgbd_recorder, realtime=not args.headless and args.source not in ("camera", "opencv-camera", "astra-camera"), metrics=metrics)
+                args.frames if args.frames is not None else (600 if args.headless and args.source in ("demo", *LIVE_SOURCES) else None),
+                rgbd_recorder=rgbd_recorder, realtime=not args.headless and args.source not in LIVE_SOURCES, metrics=metrics)
         metadata.update(status="ok", summary=asdict(summary))
     except KeyboardInterrupt:
         print("DepthStrike interrupted; resources closed.", file=sys.stderr)

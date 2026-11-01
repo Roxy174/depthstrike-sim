@@ -87,6 +87,8 @@ def render_hud(state, rgbd_frame, config, mode="demo", trails=None):
         source_label = "相机体验模式｜主机计时｜近似空间计算"
     if mode == "astra-experience":
         source_label = "奥比中光相机体验｜主机计时｜出厂深度对齐"
+    if mode == "gemini-camera":
+        source_label = "奥比中光双目相机｜设备计时｜软件深度对齐"
     text(source_label, (26, 61), .48, (227, 218, 207))
     recovering = state.guidance is not None and state.guidance.message_code == "reacquiring"
     text("追踪恢复中" if recovering else STATUSES.get(state.status, "状态更新中"), (660, 43), .62, (244, 234, 219), 2)
