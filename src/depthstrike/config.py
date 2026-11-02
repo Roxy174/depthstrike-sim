@@ -10,6 +10,7 @@ class AppConfig:
     # Keep historical record defaults; load_config selects direct live play.
     interaction_mode: str = "guided"
     direct_target_forward_m: float = .38
+    direct_targets_per_hand: int = 1  # Historical recordings keep their two targets.
     fist_offset_m: float = .06
     forearm_min_length_m: float = .02
     reach_hold_s: float = .35
@@ -67,6 +68,10 @@ class AppConfig:
     def __post_init__(self):
         for item in fields(self):
             value = getattr(self, item.name)
+            if item.name == "direct_targets_per_hand":
+                if type(value) is not int or not 1 <= value <= 4:
+                    raise ValueError("direct_targets_per_hand must be an integer from 1 to 4")
+                continue
             choices = {"target_layout": ("shoulder", "measured_path"),
                        "depth_surface_mode": ("strict", "center_cluster"),
                        "fusion_mode": ("conservative", "masked"), "fist_mode": ("forearm", "hand", "wrist"),
@@ -119,6 +124,7 @@ def load_config(path: Path | None = None) -> AppConfig:
     if unknown:
         raise ValueError(f"Unknown configuration fields: {', '.join(sorted(unknown))}")
     defaults = ({"interaction_mode": "direct", "fist_mode": "wrist", "partial_tracking": True,
+                 "direct_target_forward_m": .30, "direct_targets_per_hand": 3,
                  "model_path": "models/pose_landmarker_full.task", "pose_confidence_threshold": .5,
                  "segmentation_threshold": .35, "depth_surface_mode": "center_cluster", "depth_recovery_s": .2}
                 if values.get("interaction_mode", "direct") == "direct" else {})

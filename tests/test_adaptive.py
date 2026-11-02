@@ -155,6 +155,33 @@ def test_virtual_sphere_is_occluded_by_nearer_real_surface():
     assert not target_visibility_mask(f, np.array((0, 0, 2)), .2).any()
 
 
+@pytest.mark.parametrize('model', ['none', 'brown_conrady'])
+@pytest.mark.parametrize('region', [(0, 0, 8, 9), (7, 5, 17, 16), (13, 11, 21, 21)])
+def test_region_occlusion_matches_full_image_with_missing_depth_and_distortion(model, region):
+    from depthstrike.spatial import target_visibility_mask
+    if model == 'brown_conrady': pytest.importorskip('cv2')
+    f = frame(3.)
+    f = replace(f, intrinsics=replace(f.intrinsics, distortion_model=model,
+                distortion=(.1, -.03, .002, -.001, .01) if model == 'brown_conrady' else ()))
+    f.depth_m[:10] = 1.
+    f.depth_m[::4, ::3] = np.nan
+    f.depth_m[::3, ::4] = 0.
+    center, radius = np.array((.03, -.02, 2.)), .25
+    full = target_visibility_mask(f, center, radius)
+    x0, y0, x1, y1 = region
+    local = target_visibility_mask(f, center, radius, region=region)
+    assert local.shape == (y1-y0, x1-x0)
+    np.testing.assert_array_equal(local, full[y0:y1, x0:x1])
+
+
+@pytest.mark.parametrize('region', [(0, 0, 22, 21), (-1, 0, 2, 2), (2, 2, 2, 4),
+                                    (0, 0, 3.5, 4), (0, 0, 3), 4])
+def test_out_of_bounds_or_malformed_occlusion_regions_are_rejected(region):
+    from depthstrike.spatial import target_visibility_mask
+    with pytest.raises(ValueError, match='region'):
+        target_visibility_mask(frame(), (0, 0, 2), .2, region=region)
+
+
 def test_setup_does_not_show_unmeasured_targets_even_with_old_preview_flag(skeleton):
     from depthstrike.boxing import BoxingSimulation
     sim = BoxingSimulation(AppConfig(preview_targets=True))

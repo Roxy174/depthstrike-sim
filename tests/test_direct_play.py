@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from depthstrike.boxing import BoxingSimulation
-from depthstrike.config import load_config
+from depthstrike.config import AppConfig, load_config
 from depthstrike.types import Joint3D, SkeletonFrame
 
 
@@ -21,6 +21,7 @@ def test_runtime_defaults_and_shipped_configs_skip_calibration(tmp_path):
                 load_config('configs/adaptive.json')):
         assert cfg.interaction_mode == 'direct'
         assert cfg.fist_mode == 'wrist' and cfg.partial_tracking
+        assert cfg.direct_target_forward_m == .30 and cfg.direct_targets_per_hand == 3
 
 
 def test_first_observed_shoulders_place_targets_without_any_hold_or_elbows(skeleton):
@@ -29,8 +30,8 @@ def test_first_observed_shoulders_place_targets_without_any_hold_or_elbows(skele
     state = sim.step(frame)
     assert state.status == 'RUNNING' and state.guidance is None
     assert state.remaining_s == 60 and state.score == 0
-    assert len(state.targets) == 2
-    assert state.targets[0].center == pytest.approx((-.2, .04, 1.62))
+    assert len(state.targets) == 6
+    assert state.targets[0].center == pytest.approx((-.2, .04, 1.70))
 
 
 @pytest.mark.parametrize('kind', ['missing', 'low_confidence', 'predicted'])
@@ -68,10 +69,92 @@ def test_alternating_punches_score_immediately_and_targets_stay_fixed(skeleton):
     sim.step(skeleton(.2))
     right = sim.step(skeleton(.3, right_z=1.62))
     assert right.score == 20 and right.events[0].hand == 'right'
-    assert right.targets[0].active
+    assert right.targets[2].active
     moved = sim.step(skeleton(.4, shift=.1))
     for a, b in zip(initial.targets, moved.targets):
         np.testing.assert_array_equal(a.center, b.center)
+
+
+@pytest.mark.parametrize('count', [1, 2, 3, 4])
+def test_all_spatial_targets_can_score_and_sequence_wraps_without_double_hits(skeleton, count):
+    sim = BoxingSimulation(config(direct_targets_per_hand=count))
+    initial = state = sim.step(skeleton(0))
+    assert len(state.targets) == 2 * count
+    centers = np.stack([t.center for t in state.targets])
+    assert len(np.unique(centers, axis=0)) == 2 * count
+    for n, target in enumerate(initial.targets):
+        # Establish a fresh guard, then aim a fast, observed punch at this ball.
+        sim.step(skeleton(.3 * n + .1))
+        frame = skeleton(.3 * n + .2)
+        frame.joints[f'{target.hand}_wrist'] = Joint3D(target.center, .95)
+        state = sim.step(frame)
+        assert len(state.events) == 1
+        assert (state.events[0].target_id, state.events[0].hand) == (n, target.hand)
+        assert state.score == 10 * (n + 1)
+        assert sum(t.active for t in state.targets) == 1
+        assert next(t.target_id for t in state.targets if t.active) == (n + 1) % (2 * count)
+        held = replace(frame, timestamp_s=.3 * n + .25, frame_id=10000 + n)
+        assert not sim.step(held).events
+    for a, b in zip(initial.targets, state.targets):
+        np.testing.assert_array_equal(a.center, b.center)
+
+
+def test_extra_targets_still_require_guard_speed_and_travel(skeleton):
+    sim = BoxingSimulation(config())
+    for n in range(4):
+        # Even with the closer ball intersecting the guard envelope, no motion
+        # and an initially extended hand cannot start an attack.
+        state = sim.step(skeleton(n * .1, left_z=1.7))
+        assert state.score == 0 and not state.events
+    sim.step(skeleton(.4))
+    assert sim.step(skeleton(.5, left_z=1.84)).score == 0
+
+
+def test_a_later_active_target_uses_its_own_hand_for_tracking_and_distance(skeleton):
+    sim = BoxingSimulation(config())
+    sim.step(skeleton(0))
+    sim.step(skeleton(.1, left_z=1.7))
+    sim.step(skeleton(.2))
+    state = sim.step(skeleton(.3, right_z=1.7))
+    target = state.targets[2]
+    sim.invalidate_tracking()  # Inspect distance without starting another punch.
+    frame = skeleton(.4, invalid='right_wrist')
+    frame.joints['left_wrist'] = Joint3D(target.center, .95)
+    state = sim.step(frame)
+    assert state.status == 'RUNNING'  # The inactive arm cannot block target 3.
+    assert state.feedback['left'].surface_gap_m == pytest.approx(-.14)
+    assert state.feedback['left'].depth_delta_m == pytest.approx(0.)
+    assert state.feedback['left'].lateral_m == pytest.approx(0.)
+
+
+def test_every_spatial_ball_must_fit_within_depth_bounds(skeleton):
+    # The primary ball fits at z=1.70, but upper balls at 1.68 would not.
+    sim = BoxingSimulation(config(min_depth_m=1.61))
+    state = sim.step(skeleton(0))
+    assert state.status == 'ADJUST DISTANCE' and not state.targets
+
+
+def test_old_direct_recording_without_count_keeps_two_original_targets(tmp_path, skeleton):
+    from depthstrike.recording import PoseRecorder, PoseReplaySource
+    cfg = AppConfig(interaction_mode='direct', fist_mode='wrist', smoothing_tau_s=0)
+    path = tmp_path / 'old-direct.jsonl'
+    with PoseRecorder(path, cfg) as recorder:
+        recorder.write(skeleton(0), ())
+    rows = path.read_text(encoding='utf-8').splitlines()
+    header = json.loads(rows[0])
+    del header['config']['direct_targets_per_hand']
+    rows[0] = json.dumps(header)
+    path.write_text('\n'.join(rows) + '\n', encoding='utf-8')
+    with PoseReplaySource(path) as source:
+        state = BoxingSimulation(source.config).step(source.read())
+    assert len(state.targets) == 2
+    assert state.targets[0].center == pytest.approx((-.2, .04, 1.62))
+
+
+@pytest.mark.parametrize('count', [0, -1, 5, 1.5, True, '3', None])
+def test_invalid_spatial_target_counts_are_rejected(count):
+    with pytest.raises(ValueError, match='direct_targets_per_hand'):
+        config(direct_targets_per_hand=count)
 
 
 def test_inactive_arm_loss_does_not_block_the_active_hand(skeleton):

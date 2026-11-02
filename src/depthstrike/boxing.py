@@ -5,7 +5,7 @@ import numpy as np
 
 from .config import AppConfig
 from .calibration import GuidedCalibration, valid_body
-from .automatic_layout import AutomaticLayout
+from .automatic_layout import AutomaticLayout, direct_target_positions
 from .geometry import segment_sphere_intersection
 from .interaction import estimate_fist
 from .feedback import build_feedback
@@ -233,7 +233,7 @@ class BoxingSimulation:
         fists = {h: estimate_hand(filtered.joints, h, self.config) for h in ("left", "right")}
         local = self.config.partial_tracking and self.challenge is None
         hand_valid = {h: valid_hand(filtered, fists, h, self.config) for h in ("left", "right")}
-        active_hand = ("left", "right")[self._active]
+        active_hand = ("left", "right")[self._active % 2]
         valid = hand_valid[active_hand] if local else valid_body(filtered, fists, self.config)
         guidance = self.calibration.state
         if local and guidance.stage.startswith("PRACTICE"):
@@ -253,7 +253,9 @@ class BoxingSimulation:
         capture = capture and (previous_t is None or dt > 0)
         guidance = self.calibration.update(filtered, fists, capture=capture)
         if guidance.profile is not None and not self._centers:
-            self._centers = [guidance.profile.target_centers[h].copy() for h in ("left", "right")]
+            self._centers = (direct_target_positions(guidance.profile, self.config)
+                             if self.config.interaction_mode == "direct" and self.challenge is None else
+                             [guidance.profile.target_centers[h].copy() for h in ("left", "right")])
             for tracker in self.punches.values():
                 tracker.reset()
         running = guidance.stage == "RUNNING" and guidance.profile is not None
@@ -289,7 +291,7 @@ class BoxingSimulation:
             return self._guided_state(filtered, fists, events, status, states, guidance)
         if valid and self._centers and (running or practice):
             active = (0 if guidance.stage == "PRACTICE_LEFT" else 1) if practice else self._active
-            hand = ("left", "right")[active]
+            hand = ("left", "right")[active % 2]
             punch = states[hand]
             key = (hand, punch.attack_id)
             if punch.can_hit and punch.previous_position is not None and key not in self._settled:
@@ -307,21 +309,21 @@ class BoxingSimulation:
                         self.score += event.points
                         self.hits += 1
                         self._flashes[active] = self._elapsed + self.config.hit_flash_s
-                        self._active = 1 - active
+                        self._active = (active + 1) % len(self._centers)
         status = "TRACKING LOST" if not valid else ("RUNNING" if running else "CALIBRATING")
         if self.config.interaction_mode == "direct" and not running:
             status = "ADJUST DISTANCE" if guidance.message_code == "adjust_distance" else "WAITING FOR PLAYER"
         if local and running:
             # After a hit, timer continuity follows the newly active hand.
-            self._guided_valid_previous = hand_valid[("left", "right")[self._active]]
+            self._guided_valid_previous = hand_valid[("left", "right")[self._active % 2]]
         return self._guided_state(filtered, fists, tuple(events), status, states, guidance)
 
     def _guided_state(self, frame, fists, events, status, states, guidance):
         active = 0 if guidance.stage == "PRACTICE_LEFT" else (1 if guidance.stage == "PRACTICE_RIGHT" else self._active)
-        targets = tuple(Target(n, hand, center.copy(), self.config.target_radius_m, n == active,
+        targets = tuple(Target(n, ("left", "right")[n % 2], center.copy(), self.config.target_radius_m, n == active,
                                self._flashes.get(n, -1) > self._elapsed or
                                self._practice_flashes.get(n, -1) > frame.timestamp_s)
-                        for n, (hand, center) in enumerate(zip(("left", "right"), self._centers)))
+                        for n, center in enumerate(self._centers))
         phases = {h: s.phase for h, s in states.items()}
         # Guided records place targets after measurement; direct play uses
         # AutomaticLayout's preset. Neither mode needs preview targets.

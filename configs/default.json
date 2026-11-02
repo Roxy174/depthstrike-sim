@@ -10,5 +10,6 @@
   "round_duration_s": 60.0,
   "smoothing_tau_s": 0.035,
   "punch_speed_m_s": 0.65,
-  "direct_target_forward_m": 0.38
+  "direct_target_forward_m": 0.30,
+  "direct_targets_per_hand": 3
 }

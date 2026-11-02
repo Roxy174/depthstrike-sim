@@ -46,3 +46,14 @@ def test_feedback_obeys_condition_priority(status, phase, diagnostic, want):
 def test_lateral_miss_is_not_reported_as_depth_gap():
     result = feedback((.2, .04, 1.5))
     assert result.reason == "off_axis" and result.lateral_m == pytest.approx(.4)
+
+
+def test_feedback_chooses_active_ball_among_several_targets_for_the_same_hand():
+    from depthstrike.feedback import build_feedback
+    targets = (Target(0, 'left', (-.2, .04, 1.7), .08, False),
+               Target(2, 'left', (-.3, -.14, 1.68), .08, True))
+    result = build_feedback({'left': Joint3D(targets[1].center, .95)}, targets,
+                            {'left': 'ATTACKING'}, 'RUNNING', AppConfig(), {})['left']
+    assert result.reason == 'ready'
+    assert result.surface_gap_m == pytest.approx(-.14)
+    assert result.depth_delta_m == 0. and result.lateral_m == 0.

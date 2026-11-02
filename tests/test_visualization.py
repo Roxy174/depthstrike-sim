@@ -9,7 +9,7 @@ import pytest
 
 from depthstrike.boxing import BoxingSimulation
 from depthstrike.config import AppConfig
-from depthstrike.types import HitEvent, Intrinsics, Joint3D, SceneState
+from depthstrike.types import HitEvent, Intrinsics, Joint3D, RGBDFrame, SceneState, Target
 
 
 class Visualizer:
@@ -108,6 +108,46 @@ def test_hud_has_guidance_and_current_fist_feedback(skeleton):
     assert image.shape == (800, 960, 3) and image.dtype == np.uint8
     lost = replace(state, skeleton=None, fists={}, feedback={}, status="WAITING FOR CAMERA")
     assert not np.array_equal(image, render_hud(lost, None, config))
+
+
+def test_six_ball_overlay_bounds_occlusion_work_to_small_regions(monkeypatch, skeleton):
+    pytest.importorskip('cv2')
+    from depthstrike import spatial
+    from depthstrike.config import load_config
+    from depthstrike.visualization import render_hud
+    config = load_config('configs/adaptive.json')
+    state = BoxingSimulation(config).step(skeleton(0))
+    frame = RGBDFrame(0, 0., np.zeros((480, 640, 3), np.uint8),
+                      np.full((480, 640), 3., np.float32), Intrinsics(640, 480, 600, 600, 320, 240))
+    original = spatial.target_visibility_mask
+    regions = []
+    def measured(*args, region=None):
+        assert region is not None, 'Multi-ball rendering must not depth-test the entire image per ball'
+        regions.append(region)
+        return original(*args, region=region)
+    monkeypatch.setattr(spatial, 'target_visibility_mask', measured)
+    image = render_hud(state, frame, config)
+    assert image.shape == (800, 960, 3) and len(regions) == 6
+    assert sum((x1-x0)*(y1-y0) for x0, y0, x1, y1 in regions) < .25 * 640 * 480
+    assert not frame.color_rgb.any() and np.all(frame.depth_m == 3.)
+
+
+@pytest.mark.parametrize('depth', [0., 1., float('nan'), 3.])
+def test_local_target_drawing_preserves_foreground_and_invalid_depth(depth):
+    pytest.importorskip('cv2')
+    from depthstrike.visualization import _draw_target
+    intrinsics = Intrinsics(80, 60, 100, 100, 40, 30)
+    frame = RGBDFrame(0, 0., np.zeros((60, 80, 3), np.uint8),
+                      np.full((60, 80), depth, np.float32), intrinsics)
+    image = np.full((60, 80, 3), 80, np.uint8)
+    original = image.copy()
+    _draw_target(image, Target(0, 'left', (0, 0, 2.), .2, True), intrinsics,
+                 depth_frame=frame, numbered=True)
+    if depth == 3.:
+        assert np.any(image != original)
+        np.testing.assert_array_equal(image[:10], original[:10])
+    else:
+        np.testing.assert_array_equal(image, original)
 
 
 def test_audio_failure_is_nonfatal_and_reported_once(capsys):

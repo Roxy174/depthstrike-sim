@@ -56,13 +56,23 @@ def _rays(i):
     return np.concatenate((xy, np.ones((*xy.shape[:2], 1))), axis=-1)
 
 
-def target_visibility_mask(frame, center, radius):
+def target_visibility_mask(frame, center, radius, *, region=None):
+    """Visible sphere pixels, optionally limited to (x0, y0, x1, y1)."""
     center = vector3(center)
     if not np.isfinite(radius) or radius <= 0: raise ValueError("Invalid target radius")
     rays = _rays(frame.intrinsics)
+    depth = frame.depth_m
+    if region is not None:
+        if (not isinstance(region, (tuple, list)) or len(region) != 4 or any(type(v) is not int for v in region)
+                or not 0 <= region[0] < region[2] <= frame.intrinsics.width
+                or not 0 <= region[1] < region[3] <= frame.intrinsics.height):
+            raise ValueError("Invalid target visibility region")
+        x0, y0, x1, y1 = region
+        rays = rays[y0:y1, x0:x1]
+        depth = depth[y0:y1, x0:x1]
     a = np.sum(rays*rays, axis=-1)
     b = np.sum(rays*center, axis=-1)
     discriminant = b*b-a*(center@center-radius*radius)
     front_z = (b-np.sqrt(np.maximum(discriminant, 0)))/a
-    return ((discriminant >= 0) & (front_z > 0) & np.isfinite(frame.depth_m)
-            & (frame.depth_m > front_z+.01))
+    return ((discriminant >= 0) & (front_z > 0) & np.isfinite(depth)
+            & (depth > front_z+.01))

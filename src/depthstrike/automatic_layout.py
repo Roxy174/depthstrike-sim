@@ -4,6 +4,26 @@ import numpy as np
 from .calibration import CalibrationProfile, GuidanceState, HANDS
 
 
+def direct_target_offsets(config):
+    """Shoulder-relative positions, interleaved left/right for each spatial slot."""
+    # A nearby sphere may overlap the guard envelope. PunchTracker still requires
+    # guard, speed, travel and attack extension before a contact can score.
+    forward = max(config.direct_target_forward_m, config.attack_extension_m,
+                  config.guard_extension_m + .02)
+    spacing = max(.18, 2 * config.target_radius_m + .02)
+    slots = ((0., 0., 0.), (.55 * spacing, -spacing, .02),
+             (.22 * spacing, spacing, 0.), (1.15 * spacing, 0., .04))
+    return tuple(np.array((sign * x, config.target_height_m + y, -forward - extra))
+                 for x, y, extra in slots[:config.direct_targets_per_hand]
+                 for sign in (-1, 1))
+
+
+def direct_target_positions(profile, config):
+    offsets = direct_target_offsets(config)
+    return [profile.reference_shoulders[HANDS[n % 2]] + offset
+            for n, offset in enumerate(offsets)]
+
+
 class AutomaticLayout:
     """A preset reference for play, not a measurement of the player's reach."""
 
@@ -31,13 +51,13 @@ class AutomaticLayout:
                for j in shoulders.values()):
             self.state = GuidanceState(self.stage, 0., "waiting_player")
             return self.state
-        # Keep the targets clear of the configured guard position.
-        forward = max(c.direct_target_forward_m,
-                      c.guard_extension_m+c.hand_radius_m+c.target_radius_m+.02)
-        centers = {h: j.position+np.array((0, c.target_height_m, -forward))
-                   for h, j in shoulders.items()}
+        offsets = direct_target_offsets(c)
+        positions = [shoulders[HANDS[n % 2]].position + offset
+                     for n, offset in enumerate(offsets)]
+        forward = -offsets[0][2]
+        centers = dict(zip(HANDS, positions[:2]))
         if any(not c.min_depth_m+c.target_radius_m <= p[2] <= c.max_depth_m-c.target_radius_m
-               for p in centers.values()):
+               for p in positions):
             self.state = GuidanceState(self.stage, 0., "adjust_distance")
             return self.state
         self.profile = CalibrationProfile(

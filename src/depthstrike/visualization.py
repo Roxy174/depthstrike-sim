@@ -72,6 +72,38 @@ def _bgr(hand):
     return tuple(round(c * 255) for c in COLORS[hand][::-1])
 
 
+def _draw_target(image, target, intrinsics, *, depth_frame=None, numbered=False):
+    """Blend and depth-test only the pixels touched by this target."""
+    import cv2
+    p = _pixel(target.center, intrinsics)
+    if p is None: return
+    radius = max(3, min(200, round(intrinsics.fx * target.radius / target.center[2])))
+    # Include anti-aliasing and the number, including partially offscreen balls.
+    margin = radius + 8
+    x0, y0 = max(0, p[0]-margin), max(0, p[1]-margin)
+    x1, y1 = min(image.shape[1], p[0]+margin+1), min(image.shape[0], p[1]+margin+1)
+    color = (93, 138, 43) if target.flash else (_bgr(target.hand) if target.active else (182, 169, 154))
+    if x1 > x0 and y1 > y0:
+        region = image[y0:y1, x0:x1]
+        before = region.copy() if depth_frame is not None else None
+        local = (p[0]-x0, p[1]-y0)
+        layer = region.copy()
+        cv2.circle(layer, local, radius, color, -1, cv2.LINE_AA)
+        cv2.addWeighted(layer, .18 if target.active else .08, region, .82 if target.active else .92, 0, region)
+        cv2.circle(region, local, radius, color, 3 if target.active else 1, cv2.LINE_AA)
+        cv2.ellipse(region, local, (radius, max(2, radius//3)), 0, 0, 360, color, 1, cv2.LINE_AA)
+        cv2.circle(region, (local[0]-radius//3, local[1]-radius//3), max(2, radius//7), (255, 255, 255), -1, cv2.LINE_AA)
+        if numbered:
+            draw_text(region, str(target.target_id + 1), (local[0]-5, local[1]+5), .42, color)
+        if before is not None:
+            from .spatial import target_visibility_mask
+            visible = target_visibility_mask(depth_frame, target.center, target.radius,
+                                             region=(x0, y0, x1, y1))
+            region[~visible] = before[~visible]
+    if target.preview:
+        draw_text(image, "预览", (p[0]-12, p[1]-radius-8), .4, color)
+
+
 def render_hud(state, rgbd_frame, config, mode="demo", trails=None):
     import cv2
     canvas = np.full((800, 960, 3), (247, 242, 237), np.uint8)
@@ -129,23 +161,9 @@ def render_hud(state, rgbd_frame, config, mode="demo", trails=None):
             if state.guidance and state.guidance.stage.startswith("REACH_"):
                 draw_text(image, f"{HANDS[hand]}位置", (p[0]-22, p[1]-r-8), .4, _bgr(hand))
     for target in state.targets:
-        before_target = image.copy() if config.depth_occlusion and rgbd_frame is not None else None
-        p = _pixel(target.center, intrinsics)
-        if p is None: continue
-        radius = max(3, min(200, round(intrinsics.fx * target.radius / target.center[2])))
-        color = (93, 138, 43) if target.flash else (_bgr(target.hand) if target.active else (182, 169, 154))
-        layer = image.copy()
-        cv2.circle(layer, p, radius, color, -1, cv2.LINE_AA)
-        cv2.addWeighted(layer, .18 if target.active else .08, image, .82 if target.active else .92, 0, image)
-        cv2.circle(image, p, radius, color, 3 if target.active else 1, cv2.LINE_AA)
-        cv2.ellipse(image, p, (radius, max(2, radius//3)), 0, 0, 360, color, 1, cv2.LINE_AA)
-        cv2.circle(image, (p[0]-radius//3, p[1]-radius//3), max(2, radius//7), (255, 255, 255), -1, cv2.LINE_AA)
-        if before_target is not None:
-            from .spatial import target_visibility_mask
-            visible = target_visibility_mask(rgbd_frame, target.center, target.radius)
-            image[~visible] = before_target[~visible]
-        if target.preview:
-            draw_text(image, "预览", (p[0]-12, p[1]-radius-8), .4, color)
+        _draw_target(image, target, intrinsics,
+                     depth_frame=rgbd_frame if config.depth_occlusion else None,
+                     numbered=len(state.targets) > 2)
     scale = min(700 / image.shape[1], 500 / image.shape[0])
     w, h = round(image.shape[1] * scale), round(image.shape[0] * scale)
     x, y = 20 + (700-w)//2, 98 + (500-h)//2
@@ -181,6 +199,10 @@ def render_hud(state, rgbd_frame, config, mode="demo", trails=None):
     text("当前使用", (744, 280), .48, muted)
     text(HANDS.get(active, "等待人物" if config.interaction_mode == "direct" else "校准中"),
          (744, 311), .78, _bgr(active) if active else ink, 2)
+    if len(state.targets) > 2 and not state.challenge:
+        current_target = next((t for t in state.targets if t.active), None)
+        if current_target is not None:
+            text(f"目标 {current_target.target_id + 1} / {len(state.targets)}", (744, 337), .43, muted)
     for n, hand in enumerate(("left", "right")):
         text(HANDS[hand], (744, 365+n*75), .55, _bgr(hand), 2)
         text(PHASES.get(state.phases.get(hand), "暂不可用"), (744, 391+n*75), .43, muted)

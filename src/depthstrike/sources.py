@@ -5,6 +5,7 @@ from copy import deepcopy
 import numpy as np
 
 from .capture import GeminiSource
+from .automatic_layout import direct_target_offsets
 from .config import AppConfig
 from .fusion import fuse_skeleton
 from .interaction import estimate_hand
@@ -214,6 +215,24 @@ class DemoPoseSource:
                   **elbows,
                   "left_wrist": (-.2, .04, left_z), "right_wrist": (.2, .04, right_z),
                   "left_hip": (-.15, .5, 2.), "right_hip": (.15, .5, 2.)}
+        if self.config.interaction_mode == "direct":
+            # Follow the same sequence of spatial slots as the live round.
+            # This is scripted motion, not a tracker or a camera evaluation.
+            slot = (int(cycle) // 2) % self.config.direct_targets_per_hand
+            offsets = direct_target_offsets(self.config)
+            for n, hand in enumerate(("left", "right")):
+                amount = reach if int(cycle) % 2 == n else 0.
+                neutral = np.array(values[f"{hand}_wrist"])
+                neutral[2] = 1.85
+                shoulder = np.array(values[f"{hand}_shoulder"])
+                end = shoulder + offsets[2 * slot + n] + (0., 0., -.05)
+                # Leave enough follow-through for a challenge authored from
+                # this synthetic peak to have an eligible sphere-entry time.
+                end[2] = min(end[2], shoulder[2] - self.config.attack_extension_m
+                             - self.config.hand_radius_m - self.config.target_radius_m - .05)
+                wrist = neutral + amount * (end - neutral)
+                values[f"{hand}_wrist"] = wrist
+                values[f"{hand}_elbow"] = (shoulder + wrist) / 2 + (0., .12, 0.)
         result = SkeletonFrame(self.index, t, {name: Joint3D(value, .99) for name, value in values.items()})
         self.index += 1
         if not self._demo_paused: self._motion_index += 1
