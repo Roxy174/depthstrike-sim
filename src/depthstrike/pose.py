@@ -41,20 +41,23 @@ class PoseEstimator:
     def __init__(self, config: AppConfig):
         path = Path(config.model_path)
         if not path.is_file():
-            raise DepthStrikeError(f"Pose model missing: {path}. Run: python scripts/download_pose_model.py")
+            variant = next((v for v in ('full', 'heavy', 'lite') if path.name == f'pose_landmarker_{v}.task'), 'lite')
+            raise DepthStrikeError(f'Pose model missing: {path}. Run: python scripts/download_pose_model.py --variant {variant} --output "{path}"')
         try:
             import mediapipe as mp
             self.mp = mp
             model_data = path.read_bytes()
             self.metadata = {"filename": path.name, "sha256": hashlib.sha256(model_data).hexdigest(),
                              "mediapipe_version": mp.__version__}
+            pose_threshold = config.pose_confidence_threshold or config.confidence_threshold
+            self.metadata['pose_confidence_threshold'] = pose_threshold
             options = mp.tasks.vision.PoseLandmarkerOptions(
                 # Native fopen in some Windows builds cannot open non-ASCII paths.
                 base_options=mp.tasks.BaseOptions(model_asset_buffer=model_data),
                 running_mode=mp.tasks.vision.RunningMode.VIDEO, num_poses=1,
-                min_pose_detection_confidence=config.confidence_threshold,
-                min_pose_presence_confidence=config.confidence_threshold,
-                min_tracking_confidence=config.confidence_threshold,
+                min_pose_detection_confidence=pose_threshold,
+                min_pose_presence_confidence=pose_threshold,
+                min_tracking_confidence=pose_threshold,
                 output_segmentation_masks=True)
             self.detector = mp.tasks.vision.PoseLandmarker.create_from_options(options)
         except Exception as exc:

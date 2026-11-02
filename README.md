@@ -13,6 +13,8 @@ $py = "$env:USERPROFILE\.conda\envs\depthstrike\python.exe"
 
 自动入口每轮使用一台相机。两种设备同时连接时，用 `--source gemini-camera` 或 `--source astra-camera` 指定；`--list-cameras` 只列出设备，不开始采集。更换设备后重新启动即可，仍无需校准。
 
+人物识别默认使用 **Pose Landmarker Full**。本机已备好 Full 和 Heavy；增加 `--pose-model heavy` 可切换较大模型，`--pose-model lite` 可对比轻量版本。手部深度过滤和短暂空洞恢复也已优化；实机效果需在相同场景比较。
+
 不连接相机时，可运行自动击球的合成演示：
 
 ```powershell

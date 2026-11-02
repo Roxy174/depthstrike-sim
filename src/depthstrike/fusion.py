@@ -47,13 +47,21 @@ def estimate_joint(landmark: Landmark, frame: RGBDFrame, config: AppConfig, *, m
         if mask is None:
             return Joint3D(None, invalid_reason="missing_mask")
         local_mask = np.asarray(mask)[max(0, y-r):min(i.height, y+r+1), max(0, x-r):min(i.width, x+r+1)]
-        person_support = np.isfinite(local_mask) & (local_mask >= config.confidence_threshold)
+        mask_threshold = config.segmentation_threshold or config.confidence_threshold
+        person_support = np.isfinite(local_mask) & (local_mask >= mask_threshold)
         if np.count_nonzero(person_support) < patch.size*config.depth_min_valid_ratio:
             return Joint3D(None, invalid_reason="outside_person")
         supported &= person_support
     valid = patch[supported]
     if valid.size < patch.size*config.depth_min_valid_ratio:
         return Joint3D(None, invalid_reason="insufficient_depth")
+    if center_valid and config.depth_surface_mode == 'center_cluster':
+        # A valid hand surface can dominate the patch while a minority of
+        # pixels fall on the torso/background. Require a measured majority
+        # near the center depth, rather than rejecting every mixed edge.
+        valid = valid[np.abs(valid-center_depth) <= config.depth_max_spread_m]
+        if valid.size < patch.size*config.depth_min_valid_ratio:
+            return Joint3D(None, invalid_reason="depth_discontinuity")
     if np.ptp(np.quantile(valid, [.1, .9])) > config.depth_max_spread_m:
         return Joint3D(None, invalid_reason="depth_discontinuity")
     z = float(np.median(valid))
@@ -70,9 +78,19 @@ def estimate_joint(landmark: Landmark, frame: RGBDFrame, config: AppConfig, *, m
                    depth_quality=float(quality) * (1. if center_valid else .8))
 
 
-def fuse_skeleton(frame: RGBDFrame, landmarks: dict[str, Landmark], config: AppConfig, *, mask=None, previous=None) -> SkeletonFrame:
+def fuse_skeleton(frame: RGBDFrame, landmarks: dict[str, Landmark], config: AppConfig, *,
+                  mask=None, previous=None, depth_anchors=None) -> SkeletonFrame:
     history = previous.joints if (previous is not None and
         0 < frame.timestamp_s-previous.timestamp_s <= config.max_track_gap_s) else {}
-    return SkeletonFrame(frame.frame_id, frame.timestamp_s,
-                         {name: estimate_joint(point, frame, config, mask=mask, previous=history.get(name))
-                          for name, point in landmarks.items()})
+    joints = {}
+    for name, point in landmarks.items():
+        reference = history.get(name)
+        anchor = (depth_anchors or {}).get(name)
+        if anchor is not None and config.depth_recovery_s > 0:
+            t, joint = anchor
+            if (0 < frame.timestamp_s-t <= min(config.depth_recovery_s, config.max_track_gap_s)+1e-9
+                    and joint.provenance == 'observed' and joint.is_observed
+                    and joint.confidence >= config.confidence_threshold):
+                reference = joint
+        joints[name] = estimate_joint(point, frame, config, mask=mask, previous=reference)
+    return SkeletonFrame(frame.frame_id, frame.timestamp_s, joints)

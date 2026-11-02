@@ -1,5 +1,6 @@
 """Time-aware filtering that never keeps invalid interaction points alive."""
 import math
+from collections import Counter
 from dataclasses import replace
 
 import numpy as np
@@ -11,7 +12,22 @@ from .types import Joint3D, SkeletonFrame
 class SkeletonTracker:
     def __init__(self, config: AppConfig):
         self.config = config
+        self._quality_frames = 0
+        self._hand_quality = {h: Counter() for h in ('left', 'right')}
         self.reset()
+
+    def quality_summary(self):
+        return {'frames': self._quality_frames, 'scope': 'filtered_wrist_availability_not_accuracy',
+                'hands': {h: dict(c) for h, c in self._hand_quality.items()}}
+
+    def _observe_quality(self, frame):
+        self._quality_frames += 1
+        for hand, counts in self._hand_quality.items():
+            joint = frame.joints.get(f'{hand}_wrist')
+            reason = ('measured_3d' if joint is not None and joint.is_observed else
+                      (joint.invalid_reason or 'missing_joint') if joint is not None else 'missing_joint')
+            counts[reason] += 1
+        return frame
 
     def reset(self):
         self._previous = None
@@ -26,8 +42,8 @@ class SkeletonTracker:
         dt = frame.timestamp_s-previous.timestamp_s if previous else None
         if dt is not None and dt <= 0:
             self.reset()
-            return SkeletonFrame(frame.frame_id, frame.timestamp_s,
-                                 {name: Joint3D(None, invalid_reason="timestamp_invalid") for name in frame.joints})
+            return self._observe_quality(SkeletonFrame(frame.frame_id, frame.timestamp_s,
+                                 {name: Joint3D(None, invalid_reason="timestamp_invalid") for name in frame.joints}))
         connected = dt is not None and dt <= self.config.max_track_gap_s
         if not connected:
             self._velocities = {}
@@ -100,7 +116,7 @@ class SkeletonTracker:
                     else:
                         self._display_history.pop(name, None)
         self._previous = result
-        return result
+        return self._observe_quality(result)
 
     def _kalman_update(self, name, joint, dt):
         prior = self._kalman.get(name)

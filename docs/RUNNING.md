@@ -17,7 +17,7 @@ python -m venv .venv
 $py = (Resolve-Path .venv\Scripts\python.exe).Path
 & $py -m pip install -e ".[dev,display,camera,astra]"
 & $py -m pip check
-& $py scripts/download_pose_model.py
+& $py scripts/download_pose_model.py --variant full
 ```
 
 模型仅在缺失时下载，已有模型及来源文件不会覆盖。依赖版本统一见 [pyproject.toml](../pyproject.toml)。仅做无窗口合成演示和规则测试可安装 `.[dev]`；单独使用 Gemini 2 可安装 `.[camera]`，单独使用 Astra 可安装 `.[astra]`。本机已具备这两组 Python 依赖。
@@ -65,6 +65,28 @@ Gemini 2 优先请求 640×480／30 fps 彩色流，支持 RGB、BGR、MJPG；�
 也可在启动命令后加 `--openni-dir PATH`。程序检查运行库版本、设备型号、640×480 帧格式和出厂配准状态，不在启动时安装驱动或更新固件。
 
 彩色与深度使用独立接口，主机读取时间差检查不能证明曝光同步；画面保留“奥比中光相机体验”标记。实际定位精度与真人稳定性需另行测量。
+
+## 识别模型与手部丢失
+
+实时输入默认使用 Full，单个关节仍要求 0.6 置信度；人体检测与跟踪门槛为 0.5。`adaptive.json` 将人体掩码像素门槛单独设为 0.35，并在混合深度区域保留占多数的中心表面。深度中心空洞只在近期直接观测约束下使用当前邻域实测深度，最多 0.20 秒，恢复点不刷新这个期限。
+
+本机已下载 Lite、Full 和 Heavy，使用同一摄像头入口切换：
+
+```powershell
+& $py -m depthstrike --source auto-camera --config configs/adaptive.json --pose-model full
+& $py -m depthstrike --source auto-camera --config configs/adaptive.json --pose-model heavy
+& $py -m depthstrike --source auto-camera --config configs/adaptive.json --pose-model lite
+```
+
+新电脑按需先运行 `scripts/download_pose_model.py --variant full` 或 `--variant heavy`。Full 是实时性与模型能力的默认选择；Heavy 计算量较高，不保证对所有手部遮挡更好。骨架回放已没有原图，不能更换识别模型；`rgbd-replay` 可以使用 `--pose-model` 重新识别。
+
+静止也丢手时，可以输出不含影像的原因统计：
+
+```powershell
+& $py -m depthstrike --source auto-camera --config configs/adaptive.json --metrics outputs/hand-quality.json
+```
+
+退出后查看报告 `metadata` 中的两组数据：`tracking_quality` 区分 `pose_missing`、`pose_low_confidence` 及 `fusion_` 开头的深度／掩码无效原因；`tracked_hand_quality` 统计滤波后的可用腕点及 `motion_outlier` 等剔除原因。总超时数另在会话统计中。这些是可用性统计，不是独立识别准确率。
 
 ## 演示和操作
 
@@ -143,6 +165,7 @@ Gemini SDK 若报告零设备时间戳，需按 [SDK 官方 Windows 元数据说
 | --- | --- |
 | 未发现 Gemini 2 或 Astra | 用 `--list-cameras` 检查连接；确认供电、USB 数据线、设备管理器及 SDK／运行库，关闭占用设备的程序 |
 | 找到 0 个 Astra 深度设备 | 检查 USB、供电和驱动，确认设备管理器中 `ORBBEC Depth Sensor` 在线，关闭占用相机的程序 |
+| 站着不动也丢手 | 使用 Full 和 `adaptive.json`，检查画面中手腕及手臂是否被遮挡；按上述方法导出统计，区分模型、深度及滤波问题 |
 | 骨架或目标跳动 | 使用 `configs/adaptive.json`；保持光照和单人正面取景，双肩和双手入镜；移动后按 `R` |
 | 启动后没有目标 | 让双肩进入画面；若提示调整距离，请向后移动一些。默认不需要校准 |
 | 看似碰到但没计分 | 检查深度差、活动手、出拳速度及是否收拳复位 |

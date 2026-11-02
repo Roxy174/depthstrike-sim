@@ -1,5 +1,10 @@
 {
   "interaction_mode": "direct",
+  "model_path": "models/pose_landmarker_full.task",
+  "pose_confidence_threshold": 0.5,
+  "segmentation_threshold": 0.35,
+  "depth_surface_mode": "center_cluster",
+  "depth_recovery_s": 0.2,
   "direct_target_forward_m": 0.38,
   "fusion_mode": "masked",
   "fist_mode": "wrist",

@@ -1,5 +1,7 @@
 """Common skeleton input boundary: live capture, deterministic demo or replay."""
 from contextlib import nullcontext
+from collections import Counter
+from copy import deepcopy
 import numpy as np
 
 from .capture import GeminiSource
@@ -18,6 +20,10 @@ class CameraPoseSource:
         self.last_rgbd = None
         self.last_landmarks = {}
         self._previous_skeleton = None
+        self._depth_anchors = {}
+        self._last_input_t = None
+        self._quality_frames = 0
+        self._hand_quality = {h: Counter() for h in ('left', 'right')}
         self.actions = []
         try:
             self.capture = capture if capture is not None else GeminiSource(config)
@@ -31,15 +37,46 @@ class CameraPoseSource:
             frame = self.capture.read()
         if frame is None:
             return None
+        if self._last_input_t is not None and not 0 < frame.timestamp_s-self._last_input_t <= self.config.max_track_gap_s:
+            self._depth_anchors.clear()
+        self._last_input_t = frame.timestamp_s
+        horizon = min(self.config.depth_recovery_s, self.config.max_track_gap_s)
+        self._depth_anchors = {name: anchor for name, anchor in self._depth_anchors.items()
+                               if 0 < frame.timestamp_s-anchor[0] <= horizon+1e-9}
         self.last_rgbd = frame
         self.actions = list(getattr(self.capture, "actions", ()))
         with self.metrics.measure("pose") if self.metrics else nullcontext():
             self.last_landmarks = self.estimator.detect(frame)
         with self.metrics.measure("fusion") if self.metrics else nullcontext():
             result = fuse_skeleton(frame, self.last_landmarks, self.config,
-                                   mask=getattr(self.estimator, "last_mask", None), previous=self._previous_skeleton)
+                                   mask=getattr(self.estimator, "last_mask", None), previous=self._previous_skeleton,
+                                   depth_anchors=self._depth_anchors)
+            if horizon > 0 and self.config.fusion_mode == 'masked':
+                self._depth_anchors.update({name: (frame.timestamp_s, joint) for name, joint in result.joints.items()
+                                           if joint.provenance == 'observed' and joint.is_observed})
             self._previous_skeleton = result
+            self._quality_frames += 1
+            for hand, counts in self._hand_quality.items():
+                name = f'{hand}_wrist'
+                point, joint = self.last_landmarks.get(name), result.joints.get(name)
+                if point is None:
+                    counts['pose_missing'] += 1
+                elif not np.isfinite(point.confidence) or point.confidence < self.config.confidence_threshold:
+                    counts['pose_low_confidence'] += 1
+                elif not (0 <= point.u < 1 and 0 <= point.v < 1):
+                    counts['pose_out_of_frame'] += 1
+                else:
+                    counts['pose_confident'] += 1
+                    if joint is not None and joint.is_observed:
+                        counts['measured_3d'] += 1
+                        if joint.provenance == 'depth_patch': counts['depth_patch'] += 1
+                    else:
+                        counts['fusion_'+((joint.invalid_reason or 'invalid_depth') if joint is not None else 'missing_joint')] += 1
             return result
+
+    def quality_summary(self):
+        return {'frames': self._quality_frames, 'scope': 'pose_and_depth_before_motion_filter_availability_not_accuracy',
+                'hands': deepcopy({h: dict(c) for h, c in self._hand_quality.items()})}
 
     def describe(self):
         metadata = self.capture.describe() if hasattr(self.capture, "describe") else {"source": "rgbd-replay"}

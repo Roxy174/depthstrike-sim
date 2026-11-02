@@ -1,7 +1,7 @@
 """Public command line for demo, live RGB-D, and two distinct replay levels."""
 import argparse
 from contextlib import ExitStack, redirect_stdout
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import json
 from pathlib import Path
 import sys
@@ -21,6 +21,10 @@ from .types import DepthStrikeError
 from .visualization import NullView, SceneView
 
 LIVE_SOURCES = ("camera", "gemini-camera", "auto-camera", "opencv-camera", "astra-camera")
+
+
+def _pose_model_config(config, variant):
+    return replace(config, model_path=f'models/pose_landmarker_{variant}.task') if variant else config
 
 
 def _opencv_experience_origin(metadata):
@@ -61,6 +65,7 @@ def main(argv=None) -> int:
     parser.add_argument("--sound", action="store_true", help="optional asynchronous Windows hit sound")
     parser.add_argument("--frames", type=int, help="positive frame limit; headless default: 600")
     parser.add_argument("--config", type=Path)
+    parser.add_argument("--pose-model", choices=('lite', 'full', 'heavy'), help="override the pose model for live or RGB-D input")
     parser.add_argument("--record", type=Path, help="new trajectory JSONL file")
     parser.add_argument("--record-rgbd", type=Path, help="new RGB-D directory; contains identifiable images")
     parser.add_argument("--metrics", type=Path, help="new software-stage timing JSON; never sensor latency")
@@ -71,13 +76,15 @@ def main(argv=None) -> int:
         if args.list_cameras:
             if (args.source != "demo" or any((args.input, args.config, args.record, args.record_rgbd,
                     args.metrics, args.challenge, args.review_output, args.openni_dir,
-                    args.headless, args.sound)) or args.frames is not None or args.view != "overlay"):
+                    args.headless, args.sound, args.pose_model)) or args.frames is not None or args.view != "overlay"):
                 parser.error("--list-cameras is a standalone command")
             with redirect_stdout(sys.stderr):
                 inventory = discover_cameras()
             print(json.dumps(inventory, ensure_ascii=False, allow_nan=False))
             return 0
         if args.headless and args.sound: parser.error("--sound requires a display; remove --headless or --sound")
+        if args.pose_model and args.source not in (*LIVE_SOURCES, 'rgbd-replay'):
+            parser.error('--pose-model requires a camera or rgbd-replay; pose replay contains no images')
         outputs = [p.resolve() for p in (args.record, args.record_rgbd, args.metrics, args.review_output) if p is not None]
         if len(outputs) != len(set(outputs)): parser.error("Output paths must differ")
         if args.review_output and not args.challenge: parser.error("--review-output requires --challenge")
@@ -92,6 +99,7 @@ def main(argv=None) -> int:
     metrics = None
     summary = None
     simulation = None
+    source = None
     source_metadata = {}
     metadata = {"source": args.source, "status": "partial", "evidence": "unverified"}
     code = 0
@@ -102,7 +110,7 @@ def main(argv=None) -> int:
         if args.metrics is not None:
             if args.metrics.exists(): raise FileExistsError(f"Metrics output already exists: {args.metrics}")
             metrics = StageMetrics()
-        config = load_config(args.config)
+        config = _pose_model_config(load_config(args.config), args.pose_model)
         metadata["config"] = config.to_dict()
         with ExitStack() as setup:
             if args.source == "demo": source = setup.enter_context(DemoPoseSource(config=config))
@@ -112,6 +120,7 @@ def main(argv=None) -> int:
             elif args.source == "rgbd-replay":
                 capture = setup.enter_context(RGBDReplaySource(args.input))
                 if args.config is None: config = capture.config
+                config = _pose_model_config(config, args.pose_model)
                 source = setup.enter_context(CameraPoseSource(config, capture=capture, metrics=metrics))
             elif args.source == "opencv-camera":
                 capture = setup.enter_context(OpenCVSource(config))
@@ -171,6 +180,10 @@ def main(argv=None) -> int:
                 if code == 0: code = 1
         if metrics is not None:
             try:
+                if callable(getattr(source, 'quality_summary', None)):
+                    metadata['tracking_quality'] = source.quality_summary()
+                if simulation is not None:
+                    metadata['tracked_hand_quality'] = simulation.tracker.quality_summary()
                 metrics.write_exclusive(args.metrics, metadata)
             except (OSError, ValueError, RuntimeError) as exc:
                 print(f"DepthStrike metrics: {exc}", file=sys.stderr)

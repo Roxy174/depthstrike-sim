@@ -21,6 +21,10 @@ class AppConfig:
     hand_radius_m: float = .06
     target_radius_m: float = .08
     confidence_threshold: float = .6
+    pose_confidence_threshold: float = 0.  # Zero inherits the historical joint threshold.
+    segmentation_threshold: float = 0.  # Pixel membership is separate from landmark confidence.
+    depth_surface_mode: str = "strict"
+    depth_recovery_s: float = 0.
     max_track_gap_s: float = .2
     round_duration_s: float = 60.0
     min_depth_m: float = .25
@@ -64,6 +68,7 @@ class AppConfig:
         for item in fields(self):
             value = getattr(self, item.name)
             choices = {"target_layout": ("shoulder", "measured_path"),
+                       "depth_surface_mode": ("strict", "center_cluster"),
                        "fusion_mode": ("conservative", "masked"), "fist_mode": ("forearm", "hand", "wrist"),
                        "filter_mode": ("exponential", "one_euro", "kalman")}
             if item.name in choices:
@@ -86,11 +91,11 @@ class AppConfig:
                 continue
             if isinstance(value, bool) or not isinstance(value, (float, int)) or not math.isfinite(value):
                 raise ValueError(f"{item.name} must be finite and numeric")
-            if value < 0 or (value == 0 and item.name not in {"smoothing_tau_s", "calibration_duration_s", "target_height_m", "fist_offset_m", "calibration_grace_s"}):
+            if value < 0 or (value == 0 and item.name not in {"smoothing_tau_s", "calibration_duration_s", "target_height_m", "fist_offset_m", "calibration_grace_s", "pose_confidence_threshold", "segmentation_threshold", "depth_recovery_s"}):
                 raise ValueError(f"{item.name} must be positive")
         if not 0 < self.target_reach_ratio < 1:
             raise ValueError("target_reach_ratio must be in (0, 1)")
-        for name in ("confidence_threshold", "depth_min_valid_ratio"):
+        for name in ("confidence_threshold", "depth_min_valid_ratio", "pose_confidence_threshold", "segmentation_threshold"):
             if getattr(self, name) > 1:
                 raise ValueError(f"{name} must be in (0, 1]")
         if self.min_depth_m >= self.max_depth_m:
@@ -113,6 +118,8 @@ def load_config(path: Path | None = None) -> AppConfig:
     unknown = set(values) - {f.name for f in fields(AppConfig)}
     if unknown:
         raise ValueError(f"Unknown configuration fields: {', '.join(sorted(unknown))}")
-    defaults = ({"interaction_mode": "direct", "fist_mode": "wrist", "partial_tracking": True}
+    defaults = ({"interaction_mode": "direct", "fist_mode": "wrist", "partial_tracking": True,
+                 "model_path": "models/pose_landmarker_full.task", "pose_confidence_threshold": .5,
+                 "segmentation_threshold": .35, "depth_surface_mode": "center_cluster", "depth_recovery_s": .2}
                 if values.get("interaction_mode", "direct") == "direct" else {})
     return AppConfig(**(defaults | values))
