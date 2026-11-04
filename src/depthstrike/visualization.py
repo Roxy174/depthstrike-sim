@@ -35,6 +35,8 @@ GUIDANCE = {
     "workspace_unknown": "目标路径的深度不完整，请调整取景并按 R 重新校准",
 }
 REASONS = {"depth_gap": "前后距离尚未到达目标", "off_axis": "请朝目标球的方向出拳",
+           "overlap_gap": "请再靠近一些，让手与目标球充分重叠",
+           "overlap_ready": "已达到重叠要求", "leave_target": "此球已命中，请先将手移开",
            "adjust_distance": "请调整与相机的距离",
            "low_speed": "向前出拳的速度不足", "insufficient_travel": "请增加前伸距离",
            "return_guard": "请收拳复位", "ready": "可以出拳", "inactive_hand": "请使用提示的另一只手",
@@ -106,6 +108,7 @@ def _draw_target(image, target, intrinsics, *, depth_frame=None, numbered=False)
 
 def render_hud(state, rgbd_frame, config, mode="demo", trails=None):
     import cv2
+    overlap = config.hit_mode == "overlap" and not state.challenge
     canvas = np.full((800, 960, 3), (247, 242, 237), np.uint8)
     ink, muted, teal = (72, 54, 38), (130, 112, 95), (122, 122, 31)
     def text(value, at, size=.55, color=ink, weight=1, **kwargs):
@@ -219,7 +222,9 @@ def render_hud(state, rgbd_frame, config, mode="demo", trails=None):
         hint = "回合结束，按 R 重新开始" if config.interaction_mode == "direct" else "回合结束，按 R 重新校准并开始"
     elif state.status == "WAITING FOR PLAYER": hint = "请让双肩和手腕进入画面，识别后自动放置目标"
     elif state.status == "ADJUST DISTANCE": hint = "请远离相机一些，让目标处于有效深度范围"
+    elif state.status == "TRACKING LOST" and overlap: hint = "请让当前提示手的手腕保持入镜"
     elif state.status == "TRACKING LOST" and config.interaction_mode == "direct": hint = "请让当前出拳手的肩部和手腕保持入镜"
+    elif overlap and guidance is None: hint = "请按编号触碰高亮球，手与球充分重叠即可命中"
     else:
         hint = GUIDANCE.get(guidance.message_code, "请按照画面引导完成动作") if guidance else "请朝相机方向左右交替出直拳"
         if guidance and guidance.stage.startswith("REACH_") and guidance.message_code in ("extend_comfortably", "hold_reach"):
@@ -261,10 +266,12 @@ def render_hud(state, rgbd_frame, config, mode="demo", trails=None):
         amount = float(np.clip(1-max(0., fields[0])/.5, 0, 1))
         cv2.rectangle(canvas, (492, 733), (931, 739), (216, 207, 195), -1)
         cv2.rectangle(canvas, (492, 733), (492+round(439*amount), 739), teal, -1)
-    missing_hint = "请让肩部和手腕保持入镜" if config.fist_mode == "wrist" else "请让肩、肘和手腕保持入镜"
+    missing_hint = ("请让手腕保持入镜" if overlap else
+                    "请让肩部和手腕保持入镜" if config.fist_mode == "wrist" else "请让肩、肘和手腕保持入镜")
     reason = REASONS.get(feedback.reason, "请调整站位并保持稳定") if feedback else missing_hint
+    if overlap and feedback and feedback.reason == "off_axis": reason = "请将手移向高亮目标球"
     text(reason, (24, 778), .5, muted)
-    text("以三维交互点的空间接触判定命中", (540, 778), .43, muted)
+    text("手与目标球在三维空间充分重叠即可命中" if overlap else "以三维交互点的空间接触判定命中", (540, 778), .43, muted)
     return canvas
 
 

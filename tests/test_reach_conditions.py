@@ -11,7 +11,7 @@ from test_calibration import Driver
 
 
 def config():
-    return replace(load_config('configs/adaptive.json'), interaction_mode='guided', filter_mode='exponential',
+    return replace(load_config('configs/adaptive.json'), interaction_mode='guided', hit_mode='punch', filter_mode='exponential',
                    smoothing_tau_s=0, fist_offset_m=0)
 
 

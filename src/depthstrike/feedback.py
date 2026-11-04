@@ -37,6 +37,13 @@ def build_feedback(fists: dict[str, Joint3D], targets: tuple[Target, ...], phase
         gap, depth, lateral = float(np.linalg.norm(delta) - radius), float(delta[2]), float(np.linalg.norm(delta[:2]))
         if status == "CALIBRATING": reason = "calibrating"
         elif not target.active: reason = "inactive_hand"
+        elif phases.get(hand) == "TOUCH_RELEASE": reason = "leave_target"
+        elif phases.get(hand) == "TOUCH_READY":
+            reach = radius - config.overlap_depth_m
+            if gap <= -config.overlap_depth_m + 1e-9: reason = "overlap_ready"
+            elif abs(depth) > reach: reason = "depth_gap"
+            elif lateral > reach: reason = "off_axis"
+            else: reason = "overlap_gap"
         elif phases.get(hand) == "RECOVERING": reason = "return_guard"
         elif diagnostics.get(hand) in ("low_speed", "insufficient_travel"): reason = diagnostics[hand]
         elif abs(depth) > radius: reason = "depth_gap"

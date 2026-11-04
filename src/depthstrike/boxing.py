@@ -105,7 +105,12 @@ class BoxingSimulation:
         self.punches = {hand: PunchTracker(config) for hand in ("left", "right")}
         self.calibration = (AutomaticLayout(config) if config.interaction_mode == "direct" else
                             GuidedCalibration(config) if config.interaction_mode == "guided" else None)
+        self._overlap_attack_id = 0
         self.reset()
+
+    @property
+    def overlap_hits(self):
+        return self.config.hit_mode == "overlap" and self.challenge is None
 
     def reset(self):
         self.score = self.hits = 0
@@ -118,6 +123,7 @@ class BoxingSimulation:
         self._active = 0
         self._flashes = {}
         self._settled = set()
+        self._overlap_latched = set()
         self._guided_valid_previous = False
         self._practice_flashes = {}
         if self.challenge is not None:
@@ -231,8 +237,10 @@ class BoxingSimulation:
         from .interaction import estimate_hand
         from .calibration import valid_hand
         fists = {h: estimate_hand(filtered.joints, h, self.config) for h in ("left", "right")}
-        local = self.config.partial_tracking and self.challenge is None
-        hand_valid = {h: valid_hand(filtered, fists, h, self.config) for h in ("left", "right")}
+        local = self.overlap_hits or (self.config.partial_tracking and self.challenge is None)
+        hand_valid = {h: (fists[h].is_observed and fists[h].confidence >= self.config.confidence_threshold
+                          if self.overlap_hits else valid_hand(filtered, fists, h, self.config))
+                      for h in ("left", "right")}
         active_hand = ("left", "right")[self._active % 2]
         valid = hand_valid[active_hand] if local else valid_body(filtered, fists, self.config)
         guidance = self.calibration.state
@@ -289,7 +297,10 @@ class BoxingSimulation:
             self.score, self.hits = self.challenge.score, self.challenge.hits
             status = "FINISHED" if self.challenge.complete else ("RUNNING" if valid else "TRACKING LOST")
             return self._guided_state(filtered, fists, events, status, states, guidance)
-        if valid and self._centers and (running or practice):
+        if self.overlap_hits:
+            if running and (previous_t is None or dt > 0):
+                events = self._overlap_events(frame.timestamp_s, fists, hand_valid)
+        elif valid and self._centers and (running or practice):
             active = (0 if guidance.stage == "PRACTICE_LEFT" else 1) if practice else self._active
             hand = ("left", "right")[active % 2]
             punch = states[hand]
@@ -304,12 +315,7 @@ class BoxingSimulation:
                         self.calibration.register_practice_hit(hand)
                         guidance = self.calibration.state
                     else:
-                        event = HitEvent(frame.timestamp_s, hand, active, punch.attack_id, 10)
-                        events.append(event)
-                        self.score += event.points
-                        self.hits += 1
-                        self._flashes[active] = self._elapsed + self.config.hit_flash_s
-                        self._active = (active + 1) % len(self._centers)
+                        events.append(self._score_hit(frame.timestamp_s, hand, active, punch.attack_id))
         status = "TRACKING LOST" if not valid else ("RUNNING" if running else "CALIBRATING")
         if self.config.interaction_mode == "direct" and not running:
             status = "ADJUST DISTANCE" if guidance.message_code == "adjust_distance" else "WAITING FOR PLAYER"
@@ -317,6 +323,33 @@ class BoxingSimulation:
             # After a hit, timer continuity follows the newly active hand.
             self._guided_valid_previous = hand_valid[("left", "right")[self._active % 2]]
         return self._guided_state(filtered, fists, tuple(events), status, states, guidance)
+
+    def _score_hit(self, timestamp_s, hand, target_id, attack_id):
+        event = HitEvent(timestamp_s, hand, target_id, attack_id, 10)
+        self.score += event.points
+        self.hits += 1
+        self._flashes[target_id] = self._elapsed + self.config.hit_flash_s
+        self._active = (target_id + 1) % len(self._centers)
+        return event
+
+    def _overlap_events(self, timestamp_s, fists, hand_valid):
+        radius = self.config.hand_radius_m + self.config.target_radius_m
+        # Keep per-target latches through pauses and tracking loss. A missing
+        # hand does not prove separation; only a fresh observed point can rearm.
+        for n in tuple(self._overlap_latched):
+            hand = ("left", "right")[n % 2]
+            if hand_valid[hand] and np.linalg.norm(fists[hand].position - self._centers[n]) >= radius + .01:
+                self._overlap_latched.remove(n)
+        n = self._active
+        hand = ("left", "right")[n % 2]
+        if not hand_valid[hand] or n in self._overlap_latched:
+            return ()
+        distance = np.linalg.norm(fists[hand].position - self._centers[n])
+        if distance > radius - self.config.overlap_depth_m + 1e-9:
+            return ()
+        self._overlap_latched.add(n)
+        self._overlap_attack_id += 1
+        return (self._score_hit(timestamp_s, hand, n, self._overlap_attack_id),)
 
     def _guided_state(self, frame, fists, events, status, states, guidance):
         active = 0 if guidance.stage == "PRACTICE_LEFT" else (1 if guidance.stage == "PRACTICE_RIGHT" else self._active)
@@ -332,6 +365,16 @@ class BoxingSimulation:
             targets = self.challenge.visible_targets()
             challenge_display = self.challenge.display()
         diagnostics = {h: s.reason for h, s in states.items()}
+        if self.overlap_hits:
+            for hand, fist in fists.items():
+                if not fist.is_observed or fist.confidence < self.config.confidence_threshold:
+                    phases[hand], diagnostics[hand] = "unavailable", fist.invalid_reason or "invalid_tracking"
+                elif hand != ("left", "right")[active % 2]:
+                    phases[hand], diagnostics[hand] = "TOUCH_WAIT", "inactive_hand"
+                elif active in self._overlap_latched:
+                    phases[hand], diagnostics[hand] = "TOUCH_RELEASE", "leave_target"
+                else:
+                    phases[hand], diagnostics[hand] = "TOUCH_READY", "overlap_gap"
         feedback_status = "RUNNING" if status == "CALIBRATING" and guidance.stage.startswith("PRACTICE") else status
         feedback = build_feedback(fists, targets, phases, feedback_status, self.config, diagnostics)
         return SceneState(frame, targets, self.score, self.hits,

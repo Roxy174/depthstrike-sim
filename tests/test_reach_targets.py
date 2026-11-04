@@ -69,7 +69,7 @@ def test_insufficient_range_still_cannot_place_a_ball_inside_neutral_fist(skelet
 
 
 def test_short_reach_practice_also_works_with_the_actual_adaptive_filter(skeleton):
-    config = replace(load_config('configs/adaptive.json'), interaction_mode='guided', fist_offset_m=0)
+    config = replace(load_config('configs/adaptive.json'), interaction_mode='guided', hit_mode='punch', fist_offset_m=0)
     d = Driver(skeleton, config)
     d.hold(1.)
     d.hold(1., left_z=1.68)

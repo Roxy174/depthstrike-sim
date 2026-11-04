@@ -6,10 +6,11 @@ from .calibration import CalibrationProfile, GuidanceState, HANDS
 
 def direct_target_offsets(config):
     """Shoulder-relative positions, interleaved left/right for each spatial slot."""
-    # A nearby sphere may overlap the guard envelope. PunchTracker still requires
-    # guard, speed, travel and attack extension before a contact can score.
-    forward = max(config.direct_target_forward_m, config.attack_extension_m,
-                  config.guard_extension_m + .02)
+    # Touch play uses the requested distance directly. Historical punch rounds
+    # retain their placement clearance relative to attack and guard thresholds.
+    forward = (config.direct_target_forward_m if config.hit_mode == "overlap" else
+               max(config.direct_target_forward_m, config.attack_extension_m,
+                   config.guard_extension_m + .02))
     spacing = max(.18, 2 * config.target_radius_m + .02)
     slots = ((0., 0., 0.), (.55 * spacing, -spacing, .02),
              (.22 * spacing, spacing, 0.), (1.15 * spacing, 0., .04))

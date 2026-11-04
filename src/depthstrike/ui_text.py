@@ -22,6 +22,7 @@ STAGES = {"HOLD_GUARD": "收拳准备", "REACH_LEFT": "左手前伸", "RETURN_LE
           "REACH_RIGHT": "右手前伸", "RETURN_RIGHT": "右手收回", "PRACTICE_LEFT": "左手试击",
           "PRACTICE_RIGHT": "右手试击", "COUNTDOWN": "开始倒计时", **STATUSES}
 PHASES = {"READY": "准备就绪", "ATTACKING": "出拳中", "RECOVERING": "收拳复位",
+          "TOUCH_READY": "可以触碰", "TOUCH_WAIT": "等待高亮目标", "TOUCH_RELEASE": "请移开手",
           "unavailable": "暂不可用"}
 SOURCES = {"demo": "合成演示", "camera": "双目深度相机", "gemini-camera": "奥比中光双目相机",
            "auto-camera": "自动选择相机", "opencv-camera": "奥比中光相机体验",

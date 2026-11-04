@@ -22,6 +22,7 @@ def test_runtime_defaults_and_shipped_configs_skip_calibration(tmp_path):
         assert cfg.interaction_mode == 'direct'
         assert cfg.fist_mode == 'wrist' and cfg.partial_tracking
         assert cfg.direct_target_forward_m == .30 and cfg.direct_targets_per_hand == 3
+        assert cfg.hit_mode == 'overlap' and cfg.overlap_depth_m == .02
 
 
 def test_first_observed_shoulders_place_targets_without_any_hold_or_elbows(skeleton):
@@ -51,7 +52,7 @@ def test_unobserved_shoulders_never_place_targets_or_start_timer(skeleton, kind)
 
 
 def test_starting_with_extended_hands_does_not_require_calibration_or_award_a_hit(skeleton):
-    sim = BoxingSimulation(config())
+    sim = BoxingSimulation(config(hit_mode='punch'))
     for t in (0, .1, .2):
         state = sim.step(skeleton(t, left_z=1.62, right_z=1.62))
         assert state.status == 'RUNNING' and state.guidance is None
@@ -83,7 +84,7 @@ def test_all_spatial_targets_can_score_and_sequence_wraps_without_double_hits(sk
     centers = np.stack([t.center for t in state.targets])
     assert len(np.unique(centers, axis=0)) == 2 * count
     for n, target in enumerate(initial.targets):
-        # Establish a fresh guard, then aim a fast, observed punch at this ball.
+        # Move away, then place a fresh observed hand inside this ball.
         sim.step(skeleton(.3 * n + .1))
         frame = skeleton(.3 * n + .2)
         frame.joints[f'{target.hand}_wrist'] = Joint3D(target.center, .95)
@@ -100,7 +101,7 @@ def test_all_spatial_targets_can_score_and_sequence_wraps_without_double_hits(sk
 
 
 def test_extra_targets_still_require_guard_speed_and_travel(skeleton):
-    sim = BoxingSimulation(config())
+    sim = BoxingSimulation(config(hit_mode='punch'))
     for n in range(4):
         # Even with the closer ball intersecting the guard envelope, no motion
         # and an initially extended hand cannot start an attack.
@@ -111,7 +112,7 @@ def test_extra_targets_still_require_guard_speed_and_travel(skeleton):
 
 
 def test_a_later_active_target_uses_its_own_hand_for_tracking_and_distance(skeleton):
-    sim = BoxingSimulation(config())
+    sim = BoxingSimulation(config(hit_mode='punch'))
     sim.step(skeleton(0))
     sim.step(skeleton(.1, left_z=1.7))
     sim.step(skeleton(.2))
@@ -143,9 +144,12 @@ def test_old_direct_recording_without_count_keeps_two_original_targets(tmp_path,
     rows = path.read_text(encoding='utf-8').splitlines()
     header = json.loads(rows[0])
     del header['config']['direct_targets_per_hand']
+    del header['config']['hit_mode']
+    del header['config']['overlap_depth_m']
     rows[0] = json.dumps(header)
     path.write_text('\n'.join(rows) + '\n', encoding='utf-8')
     with PoseReplaySource(path) as source:
+        assert source.config.hit_mode == 'punch'
         state = BoxingSimulation(source.config).step(source.read())
     assert len(state.targets) == 2
     assert state.targets[0].center == pytest.approx((-.2, .04, 1.62))
@@ -166,7 +170,7 @@ def test_inactive_arm_loss_does_not_block_the_active_hand(skeleton):
 
 
 def test_tracking_loss_and_pause_freeze_time_without_repositioning_or_bridging_hits(skeleton):
-    sim = BoxingSimulation(config())
+    sim = BoxingSimulation(config(hit_mode='punch'))
     initial = sim.step(skeleton(0))
     running = sim.step(skeleton(.1))
     lost = sim.step(skeleton(.2, invalid='left_wrist'))

@@ -11,6 +11,8 @@ class AppConfig:
     interaction_mode: str = "guided"
     direct_target_forward_m: float = .38
     direct_targets_per_hand: int = 1  # Historical recordings keep their two targets.
+    hit_mode: str = "punch"  # Historical recordings retain their attack rules.
+    overlap_depth_m: float = .02
     fist_offset_m: float = .06
     forearm_min_length_m: float = .02
     reach_hold_s: float = .35
@@ -73,6 +75,7 @@ class AppConfig:
                     raise ValueError("direct_targets_per_hand must be an integer from 1 to 4")
                 continue
             choices = {"target_layout": ("shoulder", "measured_path"),
+                       "hit_mode": ("punch", "overlap"),
                        "depth_surface_mode": ("strict", "center_cluster"),
                        "fusion_mode": ("conservative", "masked"), "fist_mode": ("forearm", "hand", "wrist"),
                        "filter_mode": ("exponential", "one_euro", "kalman")}
@@ -107,6 +110,11 @@ class AppConfig:
             raise ValueError("min_depth_m must be smaller than max_depth_m")
         if self.guard_extension_m >= self.attack_extension_m:
             raise ValueError("Guard must be closer to shoulder than attack threshold")
+        if self.hit_mode == "overlap":
+            if self.interaction_mode != "direct":
+                raise ValueError("overlap hit_mode requires direct interaction_mode")
+            if self.overlap_depth_m >= 2 * min(self.hand_radius_m, self.target_radius_m):
+                raise ValueError("overlap_depth_m must be smaller than the hand and target diameters")
         if not isinstance(self.depth_window_px, int) or self.depth_window_px % 2 != 1:
             raise ValueError("depth_window_px must be an odd integer")
         if not isinstance(self.camera_timeout_ms, int):
@@ -124,6 +132,7 @@ def load_config(path: Path | None = None) -> AppConfig:
     if unknown:
         raise ValueError(f"Unknown configuration fields: {', '.join(sorted(unknown))}")
     defaults = ({"interaction_mode": "direct", "fist_mode": "wrist", "partial_tracking": True,
+                 "hit_mode": "overlap",
                  "direct_target_forward_m": .30, "direct_targets_per_hand": 3,
                  "model_path": "models/pose_landmarker_full.task", "pose_confidence_threshold": .5,
                  "segmentation_threshold": .35, "depth_surface_mode": "center_cluster", "depth_recovery_s": .2}

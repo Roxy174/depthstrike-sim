@@ -52,12 +52,15 @@ def author_recording(input_path):
                 profile = simulation.calibration.profile
             elapsed = config.round_duration_s-state.remaining_s
             for hand in ("left", "right"):
-                if state.phases[hand] == "ATTACKING":
+                # Authoring still extracts completed punches, including from
+                # rounds whose displayed/scoring interaction is touch overlap.
+                phase = simulation.punches[hand].phase
+                if phase == "ATTACKING":
                     fist = state.fists[hand].position
                     extension = profile.reference_shoulders[hand][2]-fist[2]
                     if hand not in pending or extension > pending[hand]["extension"]:
                         pending[hand] = {"hand": hand, "at_s": elapsed, "position": fist.copy(), "extension": extension}
-                elif state.phases[hand] == "READY" and hand in pending:
+                elif phase == "READY" and hand in pending:
                     completed.append(pending.pop(hand))
                     if len(completed) > 32: raise ValueError("Split demonstrations into at most 32 completed punches")
         discarded += len(pending)

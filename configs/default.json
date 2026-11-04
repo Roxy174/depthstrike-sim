@@ -1,5 +1,7 @@
 {
   "interaction_mode": "direct",
+  "hit_mode": "overlap",
+  "overlap_depth_m": 0.02,
   "fist_mode": "wrist",
   "partial_tracking": true,
   "fist_offset_m": 0.06,
