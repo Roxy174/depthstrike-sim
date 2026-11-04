@@ -261,7 +261,7 @@ class BoxingSimulation:
         capture = capture and (previous_t is None or dt > 0)
         guidance = self.calibration.update(filtered, fists, capture=capture)
         if guidance.profile is not None and not self._centers:
-            self._centers = (direct_target_positions(guidance.profile, self.config)
+            self._centers = (direct_target_positions(guidance.profile.reference_shoulders, self.config)
                              if self.config.interaction_mode == "direct" and self.challenge is None else
                              [guidance.profile.target_centers[h].copy() for h in ("left", "right")])
             for tracker in self.punches.values():

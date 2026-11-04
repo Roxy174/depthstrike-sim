@@ -195,6 +195,8 @@ def render_hud(state, rgbd_frame, config, mode="demo", trails=None):
     elif stage == "HOLD_GUARD" or stage.startswith(("REACH_", "RETURN_")):
         text("正在记录动作范围", (744, 185), .43, muted, max_width=188)
         text("无需触碰目标", (744, 208), .43, muted, max_width=188)
+    if config.interaction_mode == "direct" and config.direct_target_reference == "camera" and not state.challenge:
+        text(f"目标深度 {config.camera_target_depth_m:.2f} 米", (744, 185), .43, muted, max_width=188)
     if state.guidance:
         progress = state.guidance.progress
         cv2.rectangle(canvas, (744, 231), (932, 237), (216, 207, 195), -1)

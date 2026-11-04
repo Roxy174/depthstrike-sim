@@ -21,8 +21,9 @@ def test_runtime_defaults_and_shipped_configs_skip_calibration(tmp_path):
                 load_config('configs/adaptive.json')):
         assert cfg.interaction_mode == 'direct'
         assert cfg.fist_mode == 'wrist' and cfg.partial_tracking
-        assert cfg.direct_target_forward_m == .30 and cfg.direct_targets_per_hand == 3
+        assert cfg.direct_targets_per_hand == 3
         assert cfg.hit_mode == 'overlap' and cfg.overlap_depth_m == .02
+    assert load_config().direct_target_forward_m == .30
 
 
 def test_first_observed_shoulders_place_targets_without_any_hold_or_elbows(skeleton):
@@ -146,6 +147,8 @@ def test_old_direct_recording_without_count_keeps_two_original_targets(tmp_path,
     del header['config']['direct_targets_per_hand']
     del header['config']['hit_mode']
     del header['config']['overlap_depth_m']
+    del header['config']['direct_target_reference']
+    del header['config']['camera_target_depth_m']
     rows[0] = json.dumps(header)
     path.write_text('\n'.join(rows) + '\n', encoding='utf-8')
     with PoseReplaySource(path) as source:

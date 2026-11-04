@@ -5,7 +5,7 @@ from copy import deepcopy
 import numpy as np
 
 from .capture import GeminiSource
-from .automatic_layout import direct_target_offsets
+from .automatic_layout import direct_target_positions
 from .config import AppConfig
 from .fusion import fuse_skeleton
 from .interaction import estimate_hand
@@ -219,13 +219,14 @@ class DemoPoseSource:
             # Follow the same sequence of spatial slots as the live round.
             # This is scripted motion, not a tracker or a camera evaluation.
             slot = (int(cycle) // 2) % self.config.direct_targets_per_hand
-            offsets = direct_target_offsets(self.config)
+            centers = direct_target_positions({h: np.array(values[f'{h}_shoulder'])
+                                               for h in ('left', 'right')}, self.config)
             for n, hand in enumerate(("left", "right")):
                 amount = reach if int(cycle) % 2 == n else 0.
                 neutral = np.array(values[f"{hand}_wrist"])
                 neutral[2] = 1.85
                 shoulder = np.array(values[f"{hand}_shoulder"])
-                end = shoulder + offsets[2 * slot + n] + (0., 0., -.05)
+                end = centers[2 * slot + n] + (0., 0., -.05)
                 # Leave enough follow-through for a challenge authored from
                 # this synthetic peak to have an eligible sphere-entry time.
                 end[2] = min(end[2], shoulder[2] - self.config.attack_extension_m

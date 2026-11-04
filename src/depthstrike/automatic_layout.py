@@ -19,10 +19,15 @@ def direct_target_offsets(config):
                  for sign in (-1, 1))
 
 
-def direct_target_positions(profile, config):
+def direct_target_positions(reference_shoulders, config):
+    """Place the array in shoulder-relative depth or a fixed camera Z plane."""
     offsets = direct_target_offsets(config)
-    return [profile.reference_shoulders[HANDS[n % 2]] + offset
-            for n, offset in enumerate(offsets)]
+    positions = [reference_shoulders[HANDS[n % 2]] + offset
+                 for n, offset in enumerate(offsets)]
+    if config.direct_target_reference == "camera":
+        for position in positions:
+            position[2] = config.camera_target_depth_m
+    return positions
 
 
 class AutomaticLayout:
@@ -53,9 +58,7 @@ class AutomaticLayout:
             self.state = GuidanceState(self.stage, 0., "waiting_player")
             return self.state
         offsets = direct_target_offsets(c)
-        positions = [shoulders[HANDS[n % 2]].position + offset
-                     for n, offset in enumerate(offsets)]
-        forward = -offsets[0][2]
+        positions = direct_target_positions({h: j.position for h, j in shoulders.items()}, c)
         centers = dict(zip(HANDS, positions[:2]))
         if any(not c.min_depth_m+c.target_radius_m <= p[2] <= c.max_depth_m-c.target_radius_m
                for p in positions):
@@ -64,7 +67,9 @@ class AutomaticLayout:
         self.profile = CalibrationProfile(
             reference_shoulders={h: j.position.copy() for h, j in shoulders.items()},
             neutral_extensions={h: max(0., c.guard_extension_m-.04) for h in HANDS},
-            comfortable_extensions={h: forward+c.hand_radius_m+c.target_radius_m for h in HANDS},
+            comfortable_extensions={h: (abs(shoulders[h].position[2] - centers[h][2])
+                                        if c.direct_target_reference == "camera" else -offsets[0][2])
+                                     + c.hand_radius_m + c.target_radius_m for h in HANDS},
             guard_thresholds={h: c.guard_extension_m for h in HANDS},
             attack_thresholds={h: c.attack_extension_m for h in HANDS},
             travel_thresholds={h: c.punch_min_travel_m for h in HANDS},

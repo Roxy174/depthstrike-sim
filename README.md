@@ -25,9 +25,9 @@ $py = "$env:USERPROFILE\.conda\envs\depthstrike\python.exe"
 
 ## 操作
 
-默认已取消校准：双肩被识别后自动放置 6 个目标，手腕追踪有效即可进入回合，无需前伸保持、左右试击或倒计时。目标在初始肩部前方约 30～32 厘米，分为中间、上方和下方三组，位置在本轮内固定。击打高亮球后切换下一个，蓝色代表左手，橙色代表右手。
+默认已取消校准：双肩被识别后自动放置 6 个目标，手腕追踪有效即可进入回合，无需前伸保持、左右试击或倒计时。使用上述 `adaptive.json` 时，所有小球中心固定在摄像头正前方深度 1.5 米处；左右和高度仍按人物初始肩部排列，分为中间、上方和下方三组。触碰高亮球后切换下一个，蓝色代表左手，橙色代表右手。
 
-在 `configs/adaptive.json` 中调整 `direct_target_forward_m` 可改变前后距离；`direct_targets_per_hand` 可设为 1～4，对应总共 2、4、6、8 个球。
+在 `configs/adaptive.json` 中修改 `camera_target_depth_m` 可设置相机深度，单位米；数值越小越靠近摄像头。保存后重启生效，按 `R` 只重新定位左右和高度，深度保持设定值。若将 `direct_target_reference` 改为 `shoulder`，则使用 `direct_target_forward_m` 设置肩部前伸距离。`direct_targets_per_hand` 可设为 1～4，对应总共 2、4、6、8 个球。
 
 | 按键 | 功能 |
 | --- | --- |

@@ -10,6 +10,8 @@ class AppConfig:
     # Keep historical record defaults; load_config selects direct live play.
     interaction_mode: str = "guided"
     direct_target_forward_m: float = .38
+    direct_target_reference: str = "shoulder"
+    camera_target_depth_m: float = 1.5
     direct_targets_per_hand: int = 1  # Historical recordings keep their two targets.
     hit_mode: str = "punch"  # Historical recordings retain their attack rules.
     overlap_depth_m: float = .02
@@ -75,6 +77,7 @@ class AppConfig:
                     raise ValueError("direct_targets_per_hand must be an integer from 1 to 4")
                 continue
             choices = {"target_layout": ("shoulder", "measured_path"),
+                       "direct_target_reference": ("shoulder", "camera"),
                        "hit_mode": ("punch", "overlap"),
                        "depth_surface_mode": ("strict", "center_cluster"),
                        "fusion_mode": ("conservative", "masked"), "fist_mode": ("forearm", "hand", "wrist"),
@@ -108,6 +111,10 @@ class AppConfig:
                 raise ValueError(f"{name} must be in (0, 1]")
         if self.min_depth_m >= self.max_depth_m:
             raise ValueError("min_depth_m must be smaller than max_depth_m")
+        if (self.interaction_mode == "direct" and self.direct_target_reference == "camera"
+                and not self.min_depth_m + self.target_radius_m <= self.camera_target_depth_m
+                <= self.max_depth_m - self.target_radius_m):
+            raise ValueError("camera_target_depth_m must place the entire target inside min_depth_m/max_depth_m")
         if self.guard_extension_m >= self.attack_extension_m:
             raise ValueError("Guard must be closer to shoulder than attack threshold")
         if self.hit_mode == "overlap":
