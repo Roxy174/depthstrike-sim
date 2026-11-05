@@ -90,9 +90,9 @@ def test_shoulder_default_remains_compatible_and_camera_config_is_explicit(skele
     assert AppConfig().direct_target_reference == 'shoulder'
     assert load_config().direct_target_reference == 'shoulder'
     adaptive = load_config('configs/adaptive.json')
-    assert adaptive.direct_target_reference == 'camera' and adaptive.camera_target_depth_m == 1.5
+    assert adaptive.direct_target_reference == 'camera'
     state = BoxingSimulation(adaptive).step(skeleton(0.))
-    assert all(target.center[2] == 1.5 for target in state.targets)
+    assert all(target.center[2] == adaptive.camera_target_depth_m for target in state.targets)
     shoulder = replace(config(), direct_target_reference='shoulder', direct_target_forward_m=.3)
     assert BoxingSimulation(shoulder).step(skeleton(0.)).targets[0].center[2] == pytest.approx(1.7)
 

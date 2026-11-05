@@ -6,6 +6,7 @@ import numpy as np
 
 from .arena import ArenaRenderer, BONES, COLORS, display_position
 from .audio import AudioFeedback
+from .feedback import ScoreFeedback
 from .types import DepthStrikeError, Intrinsics
 from .ui_text import (EVIDENCE, HANDS, MAIN_TITLE, PHASES, SOURCES, STAGES, STATUSES,
                       draw_text, set_window_title)
@@ -106,7 +107,7 @@ def _draw_target(image, target, intrinsics, *, depth_frame=None, numbered=False)
         draw_text(image, "预览", (p[0]-12, p[1]-radius-8), .4, color)
 
 
-def render_hud(state, rgbd_frame, config, mode="demo", trails=None):
+def render_hud(state, rgbd_frame, config, mode="demo", trails=None, *, hit_notice=None):
     import cv2
     overlap = config.hit_mode == "overlap" and not state.challenge
     canvas = np.full((800, 960, 3), (247, 242, 237), np.uint8)
@@ -171,6 +172,18 @@ def render_hud(state, rgbd_frame, config, mode="demo", trails=None):
     w, h = round(image.shape[1] * scale), round(image.shape[0] * scale)
     x, y = 20 + (700-w)//2, 98 + (500-h)//2
     canvas[y:y+h, x:x+w] = cv2.resize(image, (w, h))
+    if hit_notice is not None:
+        cv2.rectangle(canvas, (34, 105), (437, 149), (62, 124, 38), -1)
+        text(f"命中！+{hit_notice.hits} 次   +{hit_notice.points} 分", (50, 135), .68,
+             (255, 255, 255), 2, max_width=372)
+    if state.status == "FINISHED":
+        cv2.rectangle(canvas, (80, 230), (660, 420), (255, 255, 255), -1)
+        cv2.rectangle(canvas, (80, 230), (660, 420), teal, 2)
+        text("关卡完成" if state.challenge else "回合结束", (110, 271), .9, teal, 2)
+        text(f"击中小球 {state.hits} 次", (110, 328), 1.12, ink, 2, max_width=520)
+        text(f"本轮积分 {state.score} 分", (110, 369), .7, ink, 2, max_width=520)
+        text("按 R 重新开始，Q / Esc 退出" if config.interaction_mode == "direct" else
+             "按 R 重新校准，Q / Esc 退出", (110, 402), .46, muted)
     active = next((t.hand for t in state.targets if t.active), None)
     if state.challenge and active is None: active = state.challenge["hand"]
     if active is None and state.guidance:
@@ -254,10 +267,16 @@ def render_hud(state, rgbd_frame, config, mode="demo", trails=None):
         if state.status == "FINISHED": hint = "关卡完成，可打开动作复盘查看各靶结果"
     text(hint, (24, 637), .52, ink, 1)
     cv2.line(canvas, (24, 652), (934, 652), (212, 202, 188), 1)
-    text(state.score, (24, 707), 1.35, ink, 2)
-    text("得分", (26, 737), .45, muted)
-    text(f"命中 {state.hits} 次", (160, 707), .8, ink, 2, max_width=145)
-    text(f"{state.remaining_s:04.1f} 秒", (315, 707), .8, ink, 2, max_width=160)
+    cv2.rectangle(canvas, (20, 663), (192, 751), (255, 255, 255), -1)
+    cv2.rectangle(canvas, (20, 663), (25, 751), teal, -1)
+    text("累计击中小球", (34, 684), .5, muted)
+    text(state.hits, (34, 740), 1.65, teal if hit_notice else ink, 2, max_width=105)
+    text("次", (151, 738), .7, muted)
+    text("积分", (212, 684), .48, muted)
+    text(f"{state.score} 分", (212, 719), .86, ink, 2, max_width=118)
+    text("剩余时间", (350, 684), .48, muted)
+    text(f"{state.remaining_s:04.1f} 秒", (350, 719), .82, ink, 2, max_width=124)
+    text("每次命中 +10 分", (212, 743), .43, muted)
     feedback = state.feedback.get(active) if active else None
     fields = None if feedback is None else (feedback.surface_gap_m, feedback.depth_delta_m, feedback.lateral_m)
     if fields is None or any(v is None for v in fields):
@@ -284,12 +303,15 @@ class NullView:
 
 
 class SceneView:
+    keep_open_on_finish = True
+
     def __init__(self, config, mode="demo", layout="overlay", sound=False):
         self.config, self.mode = config, mode
         self._closed = False
         self.arena = None
         self.cv2 = None
         self.audio = AudioFeedback(sound)
+        self.score_feedback = ScoreFeedback()
         self._last_t = None
         self._trails = {h: deque(maxlen=16) for h in COLORS}
         self.hud_name = f"DepthStrikeHUD-{os.getpid()}"
@@ -325,7 +347,8 @@ class SceneView:
             if frame is not None and joint is not None and joint.position is not None:
                 trail.append(joint.position.copy())
         if self.arena: self.arena.render(state)
-        self.cv2.imshow(self.hud_name, render_hud(state, rgbd_frame, self.config, self.mode, self._trails))
+        self.cv2.imshow(self.hud_name, render_hud(state, rgbd_frame, self.config, self.mode, self._trails,
+                                                hit_notice=self.score_feedback.update(state)))
         self.audio.notify(state.events)
 
     def poll_actions(self):

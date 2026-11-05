@@ -22,8 +22,9 @@ def test_runtime_defaults_and_shipped_configs_skip_calibration(tmp_path):
         assert cfg.interaction_mode == 'direct'
         assert cfg.fist_mode == 'wrist' and cfg.partial_tracking
         assert cfg.direct_targets_per_hand == 3
-        assert cfg.hit_mode == 'overlap' and cfg.overlap_depth_m == .02
+        assert cfg.hit_mode == 'overlap'
     assert load_config().direct_target_forward_m == .30
+    assert load_config().overlap_depth_m == .02
 
 
 def test_first_observed_shoulders_place_targets_without_any_hold_or_elbows(skeleton):

@@ -49,6 +49,14 @@ def run_session(source, simulation, view, recorder=None, max_frames=None, *,
                 break
             apply(actions)
             pending.extend(actions)
+            if (state.status == "FINISHED" and getattr(view, "keep_open_on_finish", False)
+                    and "reset" not in actions):
+                # Keep final totals readable without capturing or inferring new
+                # camera frames. R starts a fresh round; quit releases resources.
+                with span("render"):
+                    view.render(state, getattr(source, "last_rgbd", None))
+                time.sleep(.02)
+                continue
             frame_started = metrics.clock() if metrics else 0.
             wait_s = 0.
             include_total = True
@@ -111,7 +119,7 @@ def run_session(source, simulation, view, recorder=None, max_frames=None, *,
                     view.render(state, rgbd)
                 count += 1
                 if metrics: metrics.session["frames"] = count
-                if state.status == "FINISHED":
+                if state.status == "FINISHED" and not getattr(view, "keep_open_on_finish", False):
                     termination = "round_finished"
                     break
             finally:

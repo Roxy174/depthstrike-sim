@@ -115,7 +115,7 @@ def test_six_ball_overlay_bounds_occlusion_work_to_small_regions(monkeypatch, sk
     from depthstrike import spatial
     from depthstrike.config import load_config
     from depthstrike.visualization import render_hud
-    config = load_config('configs/adaptive.json')
+    config = replace(load_config('configs/adaptive.json'), camera_target_depth_m=1.5)
     state = BoxingSimulation(config).step(skeleton(0))
     frame = RGBDFrame(0, 0., np.zeros((480, 640, 3), np.uint8),
                       np.full((480, 640), 3., np.float32), Intrinsics(640, 480, 600, 600, 320, 240))

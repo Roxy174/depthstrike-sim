@@ -1,5 +1,6 @@
 """Observable interaction conditions, not claims about the cause of a miss."""
 from dataclasses import dataclass
+import time
 
 import numpy as np
 
@@ -13,6 +14,45 @@ class HandFeedback:
     surface_gap_m: float | None
     depth_delta_m: float | None
     lateral_m: float | None
+
+
+@dataclass(frozen=True)
+class HitNotice:
+    hits: int
+    points: int
+
+
+class ScoreFeedback:
+    """Brief visual feedback from authoritative round totals; never awards points."""
+
+    def __init__(self, clock=time.monotonic):
+        self.clock = clock
+        self._previous = None
+        self._notice = None
+        self._until = 0.
+        self._last_event = None
+
+    def update(self, state):
+        now = self.clock()
+        totals = (state.hits, state.score)
+        if self._previous is None:
+            gained = (len(state.events), sum(event.points for event in state.events))
+        else:
+            gained = tuple(current - old for current, old in zip(totals, self._previous))
+        event_key = tuple((event.timestamp_s, event.hand, event.target_id, event.attack_id)
+                          for event in state.events)
+        fresh_events = bool(event_key) and event_key != self._last_event
+        if min(gained) < 0:
+            self._notice = None
+        if fresh_events:
+            self._last_event = event_key
+            self._notice = HitNotice(len(state.events), sum(event.points for event in state.events))
+            self._until = now + .9
+        elif gained[0] > 0:
+            self._notice = HitNotice(*gained)
+            self._until = now + .9
+        self._previous = totals
+        return self._notice if now < self._until else None
 
 
 def build_feedback(fists: dict[str, Joint3D], targets: tuple[Target, ...], phases: dict[str, str],
