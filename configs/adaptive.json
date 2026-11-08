@@ -1,5 +1,6 @@
 {
   "interaction_mode": "direct",
+  "avatar_style": "cartoon",
   "hit_mode": "overlap",
   "overlap_depth_m": 0.01,
   "model_path": "models/pose_landmarker_full.task",

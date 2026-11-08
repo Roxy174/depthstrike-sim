@@ -62,6 +62,7 @@ def main(argv=None) -> int:
     parser.add_argument("--input", type=Path, help="pose JSONL file or RGB-D recording directory")
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--view", choices=("overlay", "dual"), default="overlay")
+    parser.add_argument("--avatar", choices=("cartoon", "skeleton"), help="character display style; V toggles in the window")
     parser.add_argument("--sound", action="store_true", help="optional asynchronous Windows hit sound")
     parser.add_argument("--frames", type=int, help="positive frame limit; headless default: 600")
     parser.add_argument("--config", type=Path)
@@ -76,7 +77,7 @@ def main(argv=None) -> int:
         if args.list_cameras:
             if (args.source != "demo" or any((args.input, args.config, args.record, args.record_rgbd,
                     args.metrics, args.challenge, args.review_output, args.openni_dir,
-                    args.headless, args.sound, args.pose_model)) or args.frames is not None or args.view != "overlay"):
+                    args.headless, args.sound, args.pose_model, args.avatar)) or args.frames is not None or args.view != "overlay"):
                 parser.error("--list-cameras is a standalone command")
             with redirect_stdout(sys.stderr):
                 inventory = discover_cameras()
@@ -135,6 +136,7 @@ def main(argv=None) -> int:
             else:
                 with redirect_stdout(sys.stderr):
                     source = setup.enter_context(CameraPoseSource(config, metrics=metrics))
+            if args.avatar is not None: config = replace(config, avatar_style=args.avatar)
             simulation = BoxingSimulation(config, challenge=challenge)
             source_metadata = source.describe() if hasattr(source, "describe") else getattr(source, "metadata", {"source": args.source})
             view_mode = source_metadata.get("selected_camera_source", args.source)

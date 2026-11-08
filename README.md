@@ -21,7 +21,7 @@ $py = "$env:USERPROFILE\.conda\envs\depthstrike\python.exe"
 & $py -m depthstrike --source demo --config configs/adaptive.json
 ```
 
-增加 `--view dual` 可显示三维辅助窗口。新电脑安装、其他相机与故障处理见 [运行说明](docs/RUNNING.md)。
+默认显示可动的上半身卡通角色，包含头部、球衣、手臂和左右手套；按 `V` 可切回骨架。增加 `--view dual` 可同时打开立体角色窗口，`--avatar skeleton` 可直接使用骨架显示。新电脑安装、其他相机与故障处理见 [运行说明](docs/RUNNING.md)。
 
 ## 操作
 
@@ -33,6 +33,7 @@ $py = "$env:USERPROFILE\.conda\envs\depthstrike\python.exe"
 | --- | --- |
 | 空格 | 暂停／继续 |
 | R | 清分、重新开始并按当前肩部位置放置目标 |
+| V | 切换卡通角色／骨架显示，不重置分数 |
 | Q / Esc | 退出并释放相机 |
 
 保持单人正面，初始化时让双肩入镜，然后按高亮球提示用左手或右手触碰。默认手部球与目标球在三维空间重叠约 2 厘米即可命中，无需收拳或快速出拳；同一个球命中后，需要将手完全移开再触碰才能再次计分。命中增加 10 分，小球短暂变绿并切换下一个目标。改变站位或移动相机后按 `R`。

@@ -3,6 +3,7 @@ from collections import deque
 
 import numpy as np
 
+from .avatar import PART_NAMES, build_avatar
 from .types import DepthStrikeError
 from .ui_text import ARENA_TITLE
 
@@ -21,6 +22,7 @@ def display_position(position):
 class ArenaRenderer:
     def __init__(self, config, *, visualizer=None, o3d=None):
         self.config = config
+        self.avatar_style = config.avatar_style
         self.vis = None
         self._closed = False
         self._actions = []
@@ -49,7 +51,10 @@ class ArenaRenderer:
                 self.vis.add_geometry(self.geometries[name], reset_bounding_box=False)
             for name in ("nose", "fist_left", "fist_right", "target_0", "target_1"):
                 self._new_sphere(name)
-            for key, action in ((32, "pause"), (ord("C"), "capture_reach"), (ord("R"), "reset"), (ord("Q"), "quit"), (256, "quit")):
+            if self.avatar_style == "cartoon":
+                for name in PART_NAMES:
+                    self._new_sphere(f'avatar_{name}', 'torso' if name == 'torso' else 'ellipsoid')
+            for key, action in ((32, "pause"), (ord("C"), "capture_reach"), (ord("R"), "reset"), (ord("V"), "toggle_avatar"), (ord("Q"), "quit"), (256, "quit")):
                 self.vis.register_key_callback(key, lambda vis, a=action: self._enqueue(a))
             control = self.vis.get_view_control()
             control.set_lookat([0, -.1, -1.7])
@@ -65,8 +70,11 @@ class ArenaRenderer:
         self._actions.append(action)
         return False
 
-    def _new_sphere(self, name):
+    def _new_sphere(self, name, shape='ellipsoid'):
         mesh = self.o3d.geometry.TriangleMesh.create_sphere(1., resolution=12)
+        if shape == 'torso':
+            vertices = np.asarray(mesh.vertices)
+            mesh.vertices = self.o3d.utility.Vector3dVector(np.sign(vertices) * np.abs(vertices) ** .65)
         mesh.compute_vertex_normals()
         self._templates[name] = (np.asarray(mesh.vertices).copy(), np.asarray(mesh.triangles).copy(),
                                  np.asarray(mesh.vertex_normals).copy())
@@ -81,21 +89,28 @@ class ArenaRenderer:
         lines.paint_uniform_color(color)
 
     def _update_sphere(self, name, center, radius, color):
+        self._update_mesh(name, center, np.eye(3) * radius, color)
+
+    def _update_mesh(self, name, center, transform, color, shape='ellipsoid'):
         if name not in self.geometries:
-            self._new_sphere(name)
+            self._new_sphere(name, shape)
         mesh = self.geometries[name]
         if center is None:
             mesh.clear()
         else:
             vertices, triangles, normals = self._templates[name]
-            mesh.vertices = self.o3d.utility.Vector3dVector(vertices * radius + display_position(center))
+            mesh.vertices = self.o3d.utility.Vector3dVector(vertices @ transform.T + display_position(center))
             mesh.triangles = self.o3d.utility.Vector3iVector(triangles)
-            mesh.vertex_normals = self.o3d.utility.Vector3dVector(normals)
+            transformed_normals = normals @ np.linalg.inv(transform)
+            transformed_normals /= np.maximum(np.linalg.norm(transformed_normals, axis=1, keepdims=True), 1e-12)
+            mesh.vertex_normals = self.o3d.utility.Vector3dVector(transformed_normals)
+            mesh.compute_triangle_normals()
             mesh.paint_uniform_color(color)
         self.vis.update_geometry(mesh)
 
     def render(self, state):
         if self._closed: return
+        cartoon = self.avatar_style == 'cartoon'
         frame = state.skeleton
         points = {n: j.position for n, j in frame.joints.items() if j.position is not None} if frame else {}
         segments = [(points[a], points[b]) for a, b in BONES if a in points and b in points]
@@ -106,14 +121,23 @@ class ArenaRenderer:
             wrist = points.get(f"{hand}_wrist")
             if proxies[hand] is not None and wrist is not None:
                 segments.append((wrist, proxies[hand]))
-        self._set_lines(self.geometries["bones"], segments, (.27, .34, .42))
+        self._set_lines(self.geometries["bones"], [] if cartoon else segments, (.27, .34, .42))
         self.vis.update_geometry(self.geometries["bones"])
         estimated = {**points, **{n: j.position for n, j in state.display_joints.items()}}
         predictions = [(estimated[a], estimated[b]) for a, b in BONES
                        if a in estimated and b in estimated and (a in state.display_joints or b in state.display_joints)]
-        self._set_lines(self.geometries["predicted"], predictions, (.7, .7, .7))
+        self._set_lines(self.geometries["predicted"], [] if cartoon else predictions, (.7, .7, .7))
         self.vis.update_geometry(self.geometries["predicted"])
-        self._update_sphere("nose", points.get("nose"), .075, (.64, .69, .74))
+        self._update_sphere("nose", None if cartoon else points.get("nose"), .075, (.64, .69, .74))
+        present_avatar = set()
+        for part in build_avatar(state, self.config) if cartoon else ():
+            name = f'avatar_{part.name}'
+            present_avatar.add(name)
+            self._update_mesh(name, part.center, np.diag((1., -1., -1.)) @ part.transform,
+                              part.display_color, part.shape)
+        for name in tuple(self.geometries):
+            if name.startswith('avatar_') and name not in present_avatar:
+                self._update_sphere(name, None, 1., (0, 0, 0))
         broken = frame is None or self._last_t is not None and not 0 < frame.timestamp_s - self._last_t <= self.config.max_track_gap_s + 1e-9
         self._last_t = frame.timestamp_s if frame else None
         for hand, point in proxies.items():
@@ -122,7 +146,7 @@ class ArenaRenderer:
                 trail.clear()
             if point is not None:
                 trail.append(point.copy())
-            self._update_sphere(f"fist_{hand}", point, self.config.hand_radius_m, COLORS[hand])
+            self._update_sphere(f"fist_{hand}", None if cartoon else point, self.config.hand_radius_m, COLORS[hand])
             self._set_lines(self.geometries[f"trail_{hand}"], list(zip(list(trail)[:-1], list(trail)[1:])), COLORS[hand])
             self.vis.update_geometry(self.geometries[f"trail_{hand}"])
         present = set()

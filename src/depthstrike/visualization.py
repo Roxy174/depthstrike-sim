@@ -6,6 +6,7 @@ import numpy as np
 
 from .arena import ArenaRenderer, BONES, COLORS, display_position
 from .audio import AudioFeedback
+from .avatar import build_avatar, draw_avatar
 from .feedback import ScoreFeedback
 from .types import DepthStrikeError, Intrinsics
 from .ui_text import (EVIDENCE, HANDS, MAIN_TITLE, PHASES, SOURCES, STAGES, STATUSES,
@@ -107,8 +108,9 @@ def _draw_target(image, target, intrinsics, *, depth_frame=None, numbered=False)
         draw_text(image, "预览", (p[0]-12, p[1]-radius-8), .4, color)
 
 
-def render_hud(state, rgbd_frame, config, mode="demo", trails=None, *, hit_notice=None):
+def render_hud(state, rgbd_frame, config, mode="demo", trails=None, *, hit_notice=None, avatar_style=None):
     import cv2
+    avatar_style = avatar_style or config.avatar_style
     overlap = config.hit_mode == "overlap" and not state.challenge
     canvas = np.full((800, 960, 3), (247, 242, 237), np.uint8)
     ink, muted, teal = (72, 54, 38), (130, 112, 95), (122, 122, 31)
@@ -130,7 +132,7 @@ def render_hud(state, rgbd_frame, config, mode="demo", trails=None, *, hit_notic
     text("追踪恢复中" if recovering else STATUSES.get(state.status, "状态更新中"), (660, 43), .62, (244, 234, 219), 2)
     if rgbd_frame is None:
         image = np.full((360, 640, 3), (239, 233, 226), np.uint8)
-        intrinsics = Intrinsics(640, 360, 750, 750, 320, 130)
+        intrinsics = Intrinsics(640, 360, 600, 600, 320, 150)
         # Spatial references belong to the synthetic field, never the live feed.
         for u in range(0, 640, 40): cv2.line(image, (u, 0), (u, 359), (225, 217, 207), 1)
         for v in range(0, 360, 40): cv2.line(image, (0, v), (639, v), (225, 217, 207), 1)
@@ -140,13 +142,15 @@ def render_hud(state, rgbd_frame, config, mode="demo", trails=None, *, hit_notic
     points = {}
     if state.skeleton is not None:
         points = {name: _pixel(j.position, intrinsics) for name, j in state.skeleton.joints.items() if j.position is not None}
-        for a, b in BONES:
+        if avatar_style == 'cartoon':
+            draw_avatar(image, build_avatar(state, config), intrinsics)
+        for a, b in BONES if avatar_style == 'skeleton' else ():
             if points.get(a) is not None and points.get(b) is not None:
                 cv2.line(image, points[a], points[b], (110, 100, 87), 2, cv2.LINE_AA)
-        for name, point in points.items():
+        for name, point in points.items() if avatar_style == 'skeleton' else ():
             if point is not None:
                 cv2.circle(image, point, 4, _bgr("left" if name.startswith("left") else "right"), -1, cv2.LINE_AA)
-        for name, joint in state.display_joints.items():
+        for name, joint in state.display_joints.items() if avatar_style == 'skeleton' else ():
             p = _pixel(joint.position, intrinsics)
             if p is not None: cv2.circle(image, p, 8, (160, 160, 160), 1, cv2.LINE_AA)
         for hand, joint in state.fists.items():
@@ -158,7 +162,7 @@ def render_hud(state, rgbd_frame, config, mode="demo", trails=None, *, hit_notic
                 for a, b in zip(prior[:-1], prior[1:]):
                     if a is not None and b is not None: cv2.line(image, a, b, _bgr(hand), 2, cv2.LINE_AA)
             wrist = points.get(f"{hand}_wrist")
-            if wrist is not None: cv2.line(image, wrist, p, _bgr(hand), 2, cv2.LINE_AA)
+            if wrist is not None and avatar_style == 'skeleton': cv2.line(image, wrist, p, _bgr(hand), 2, cv2.LINE_AA)
             r = max(4, min(100, round(intrinsics.fx * config.hand_radius_m / joint.position[2])))
             cv2.circle(image, p, r, _bgr(hand), 2, cv2.LINE_AA)
             cv2.circle(image, p, 4, _bgr(hand), -1, cv2.LINE_AA)
@@ -210,6 +214,9 @@ def render_hud(state, rgbd_frame, config, mode="demo", trails=None, *, hit_notic
         text("无需触碰目标", (744, 208), .43, muted, max_width=188)
     if config.interaction_mode == "direct" and config.direct_target_reference == "camera" and not state.challenge:
         text(f"目标深度 {config.camera_target_depth_m:.2f} 米", (744, 185), .43, muted, max_width=188)
+    if config.interaction_mode == 'direct':
+        text('卡通角色｜V 切换' if avatar_style == 'cartoon' else '人物骨架｜V 切换',
+             (744, 208), .43, muted, max_width=188)
     if state.guidance:
         progress = state.guidance.progress
         cv2.rectangle(canvas, (744, 231), (932, 237), (216, 207, 195), -1)
@@ -307,6 +314,7 @@ class SceneView:
 
     def __init__(self, config, mode="demo", layout="overlay", sound=False):
         self.config, self.mode = config, mode
+        self.avatar_style = config.avatar_style
         self._closed = False
         self.arena = None
         self.cv2 = None
@@ -346,9 +354,11 @@ class SceneView:
                 trail.clear()
             if frame is not None and joint is not None and joint.position is not None:
                 trail.append(joint.position.copy())
-        if self.arena: self.arena.render(state)
+        if self.arena:
+            self.arena.avatar_style = self.avatar_style
+            self.arena.render(state)
         self.cv2.imshow(self.hud_name, render_hud(state, rgbd_frame, self.config, self.mode, self._trails,
-                                                hit_notice=self.score_feedback.update(state)))
+                                                hit_notice=self.score_feedback.update(state), avatar_style=self.avatar_style))
         self.audio.notify(state.events)
 
     def poll_actions(self):
@@ -363,6 +373,9 @@ class SceneView:
         action = {32: "pause", ord("c"): "capture_reach", ord("C"): "capture_reach",
                   ord("r"): "reset", ord("q"): "quit", 27: "quit"}.get(key)
         if action and action not in actions: actions.append(action)
+        if key in (ord('v'), ord('V')) or 'toggle_avatar' in actions:
+            self.avatar_style = 'skeleton' if self.avatar_style == 'cartoon' else 'cartoon'
+            actions = [a for a in actions if a != 'toggle_avatar']
         return actions
 
     def close(self):

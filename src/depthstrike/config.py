@@ -9,6 +9,7 @@ from pathlib import Path
 class AppConfig:
     # Keep historical record defaults; load_config selects direct live play.
     interaction_mode: str = "guided"
+    avatar_style: str = "skeleton"
     direct_target_forward_m: float = .38
     direct_target_reference: str = "shoulder"
     camera_target_depth_m: float = 1.5
@@ -77,6 +78,7 @@ class AppConfig:
                     raise ValueError("direct_targets_per_hand must be an integer from 1 to 4")
                 continue
             choices = {"target_layout": ("shoulder", "measured_path"),
+                       "avatar_style": ("skeleton", "cartoon"),
                        "direct_target_reference": ("shoulder", "camera"),
                        "hit_mode": ("punch", "overlap"),
                        "depth_surface_mode": ("strict", "center_cluster"),
@@ -139,7 +141,7 @@ def load_config(path: Path | None = None) -> AppConfig:
     if unknown:
         raise ValueError(f"Unknown configuration fields: {', '.join(sorted(unknown))}")
     defaults = ({"interaction_mode": "direct", "fist_mode": "wrist", "partial_tracking": True,
-                 "hit_mode": "overlap",
+                 "hit_mode": "overlap", "avatar_style": "cartoon",
                  "direct_target_forward_m": .30, "direct_targets_per_hand": 3,
                  "model_path": "models/pose_landmarker_full.task", "pose_confidence_threshold": .5,
                  "segmentation_threshold": .35, "depth_surface_mode": "center_cluster", "depth_recovery_s": .2}
